@@ -74,6 +74,21 @@ async function app(name, args) {
 
 const failed = (e) => String(e?.message ?? e ?? "").trim() || "Something went wrong.";
 
+// The sizes of a pane and its siblings (pane-size.py): the swap's split and removal shift a row's
+// widths, so they are read first and put back once the swap is done. Best effort.
+const SIZE = () => `${appHome()}/mods/omarchy-pane/pane-size.py`;
+async function rowSizes(pane) {
+  const m = machineOf(pane);
+  const r = await exec("python3", [SIZE(), "get", pane, ...(m ? ["--machine", m] : [])]);
+  try { return r.code === 0 ? JSON.parse(r.stdout) : null; } catch { return null; }
+}
+function carrySizes(from, to, sizes) {
+  if (!from || !to || !sizes) return;
+  const m = machineOf(to);
+  const args = [SIZE(), "carry", from, to, JSON.stringify(sizes), ...(m ? ["--machine", m] : [])].map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ");
+  exec("sh", ["-c", `python3 ${args} >/dev/null 2>&1 &`]);
+}
+
 function icon(p, size, color) {
   if (!p?.icon) return null;
   return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
@@ -248,6 +263,7 @@ export default class Pane extends View {
     const terminal = p.terminal;
     cx.spawn(async (cx) => {
       try {
+        const sizes = await rowSizes(p.pane);
         const out = await app("pane.split", { direction: "right", pane: p.pane, mod: CHAT, props: { terminal } });
         if (!out.pane) throw new Error("Herdr didn't open the chat");
         // The agent knows its chat: if that pane goes with its tab or space, omarchy-agents
@@ -257,6 +273,7 @@ export default class Pane extends View {
         run("pane.focus", { pane: out.pane });
         // Last: parking removes this pane, and this header with it. The chat turns core keep
         // back on once the park has gone through.
+        carrySizes(p.pane, out.pane, sizes);
         await app("terminal.park", { terminal });
       } catch (e) {
         notify({ title: "Chat didn't open", body: failed(e), level: "error" });
@@ -283,6 +300,7 @@ export default class Pane extends View {
     this.busy = true;
     cx.spawn(async (cx) => {
       try {
+        const sizes = await rowSizes(chat);
         await app("pane.focus", { pane: chat });
         const out = await app("terminal.keep", { terminal, place: "right" });
         // A keep that waits on the machine (pending) can still fail: the label and the chat stay
@@ -298,6 +316,7 @@ export default class Pane extends View {
         const back = out.pane ?? panes().find((x) => x.terminal === terminal)?.pane;
         if (back) run("pane.focus", { pane: back });
         // Last: closing the chat removes this header too.
+        carrySizes(chat, back, sizes);
         await app("pane.close", { pane: chat });
       } catch (e) {
         notify({ title: "Terminal didn't come back", body: failed(e), level: "error" });
