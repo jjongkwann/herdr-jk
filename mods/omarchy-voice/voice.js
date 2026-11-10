@@ -45,6 +45,10 @@ export function missing(tools, modelDir) {
   return lacks.length ? `Dictation needs ${lacks.join(", ")}.` : null;
 }
 
+// Shell lines that set $p to the recorder's pid, only while that pid is still the ffmpeg writing "$1":
+// a pid file left by a crash may name an unrelated process by now.
+const OURS = 'ours() { p=$(cat "$1.pid" 2>/dev/null) && ps -ww -p "$p" -o args= 2>/dev/null | grep -qF -- "$1"; }; ';
+
 // Starts ffmpeg in the background, writing `file`; its pid goes to `file.pid`, its log to `file.log`.
 // ffmpeg quits at once when the microphone is refused or missing, so the shell watches it for 0.8 s.
 // Resolves with null once it is recording, or with what went wrong.
@@ -57,22 +61,28 @@ export async function startRecording(exec, ffmpeg, file) {
   return r.code === 0 ? null : recorderTrouble(r.stdout);
 }
 
+// Whether the recorder for `file` is still running (it stops by itself at MAX_SECONDS).
+export async function recording(exec, file) {
+  const r = await exec("sh", ["-c", OURS + 'ours "$1"', "x", file]).catch(() => null);
+  return r?.code === 0;
+}
+
 // Stops ffmpeg so it finishes the WAV, and waits for it to exit (at most two seconds). SIGTERM, not
 // SIGINT: a job started in the background by a non-interactive shell starts with SIGINT ignored.
 export async function stopRecording(exec, file) {
-  await exec("sh", ["-c",
-    'p=$(cat "$1.pid" 2>/dev/null) || exit 0; kill -TERM "$p" 2>/dev/null; i=0; while kill -0 "$p" 2>/dev/null && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; kill -KILL "$p" 2>/dev/null; rm -f "$1.pid"; true',
+  await exec("sh", ["-c", OURS +
+    'if ours "$1"; then kill -TERM "$p"; i=0; while kill -0 "$p" 2>/dev/null && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; ours "$1" && kill -KILL "$p"; fi; rm -f "$1.pid"; true',
     "x", file]);
 }
 
 // Throws a recording away (the mod reloading or closing mid-recording).
 export async function cancelRecording(exec, file) {
-  await exec("sh", ["-c", 'p=$(cat "$1.pid" 2>/dev/null) && kill -TERM "$p" 2>/dev/null; rm -f "$1.pid" "$1" "$1.log"; true', "x", file]).catch(() => null);
+  await exec("sh", ["-c", OURS + 'ours "$1" && kill -TERM "$p"; rm -f "$1.pid" "$1" "$1.log"; true', "x", file]).catch(() => null);
 }
 
 // Writes `file` down. Resolves with { text } ("" when nothing was heard) or { error }.
 export async function transcribe(exec, tools, file) {
-  const r = await exec(tools.whisper, ["-m", tools.model, "-f", file, "-l", "auto", "-nt", "-np", "-t", "8"], { timeout: 120000 })
+  const r = await exec(tools.whisper, ["-m", tools.model, "-f", file, "-l", "auto", "-nt", "-np", "-t", "8"], { timeout: 600000 })
     .catch((e) => ({ code: -1, stdout: "", stderr: String(e?.message ?? e) }));
   if (r.code !== 0) return { error: whisperTrouble(r.stderr) };
   return { text: clean(r.stdout) };
@@ -96,4 +106,22 @@ export function whisperTrouble(said) {
 // whisper's text without its markers for silence and noise ("[BLANK_AUDIO]", "(music)", "[음악]").
 export function clean(text) {
   return text.split("\n").map((l) => l.replace(/\[[^\]]*\]|\([^)]*\)/g, "").trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+// The clipboard, whole: pasteboard.jxa copies every item and type (an image, copied files, rich text)
+// to `dir` and back. `board` is "general" for the clipboard; tests use "ruler", which nothing else uses.
+export async function saveClipboard(exec, script, board, dir) {
+  const r = await exec("osascript", ["-l", "JavaScript", script, "save", board, dir]);
+  if (r.code !== 0) throw new Error(r.stderr.trim() || "couldn't save the clipboard");
+}
+
+export async function restoreClipboard(exec, script, board, dir) {
+  const r = await exec("osascript", ["-l", "JavaScript", script, "restore", board, dir]);
+  if (r.code !== 0) throw new Error(r.stderr.trim() || "couldn't restore the clipboard");
+}
+
+// Puts text on the pasteboard. pbcopy reads UTF-8 only with a UTF-8 locale, which Herdr's environment may lack.
+export async function writeClipboard(exec, board, text) {
+  const r = await exec("sh", ["-c", 'printf %s "$2" | LC_ALL=en_US.UTF-8 pbcopy -pboard "$1"', "x", board, text]);
+  if (r.code !== 0) throw new Error(r.stderr.trim() || "couldn't copy the text");
 }

@@ -1,0 +1,55 @@
+// Saves or restores a whole macOS pasteboard: every item, every type, as raw data.
+//   osascript -l JavaScript pasteboard.jxa save    <pasteboard> <folder>
+//   osascript -l JavaScript pasteboard.jxa restore <pasteboard> <folder>
+// <pasteboard>: "general" (the clipboard) or another name pbcopy knows ("ruler", "find", "font").
+// <folder> gets manifest.json ([[type, ...] per item]) and one <item>-<type index>.bin per type.
+// Restoring an empty save empties the pasteboard.
+ObjC.import("AppKit");
+
+function board(name) {
+  return name === "general" ? $.NSPasteboard.generalPasteboard : $.NSPasteboard.pasteboardWithName(`Apple CFPasteboard ${name}`);
+}
+
+function run(argv) {
+  const [action, name, dir] = argv;
+  const pb = board(name);
+  const fm = $.NSFileManager.defaultManager;
+  if (action === "save") {
+    fm.removeItemAtPathError(dir, null);
+    fm.createDirectoryAtPathWithIntermediateDirectoriesAttributesError(dir, true, $(), null);
+    const manifest = [];
+    const items = pb.pasteboardItems;
+    const n = items.isNil() ? 0 : items.count;
+    for (let i = 0; i < n; i++) {
+      const item = items.objectAtIndex(i);
+      const types = [];
+      const all = item.types;
+      for (let j = 0; j < all.count; j++) {
+        const type = all.objectAtIndex(j);
+        const data = item.dataForType(type);
+        // Promised data that can't be produced now is left out.
+        if (data.isNil()) continue;
+        data.writeToFileAtomically(`${dir}/${i}-${types.length}.bin`, true);
+        types.push(ObjC.unwrap(type));
+      }
+      manifest.push(types);
+    }
+    $(JSON.stringify(manifest)).writeToFileAtomicallyEncodingError(`${dir}/manifest.json`, true, $.NSUTF8StringEncoding, null);
+    return `saved ${manifest.length} item(s)`;
+  }
+  if (action === "restore") {
+    const text = $.NSString.stringWithContentsOfFileEncodingError(`${dir}/manifest.json`, $.NSUTF8StringEncoding, null);
+    if (text.isNil()) throw new Error(`no saved pasteboard in ${dir}`);
+    const manifest = JSON.parse(ObjC.unwrap(text));
+    pb.clearContents;
+    const objects = $.NSMutableArray.array;
+    manifest.forEach((types, i) => {
+      const item = $.NSPasteboardItem.alloc.init;
+      types.forEach((type, j) => item.setDataForType($.NSData.dataWithContentsOfFile(`${dir}/${i}-${j}.bin`), type));
+      objects.addObject(item);
+    });
+    if (objects.count) pb.writeObjects(objects);
+    return `restored ${manifest.length} item(s)`;
+  }
+  throw new Error(`unknown action ${action}`);
+}
