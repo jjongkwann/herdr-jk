@@ -5,7 +5,8 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { spaces, machines, panes, terminals, focused, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { chatAgents, spacesWithChats } from "./parked.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -251,7 +252,11 @@ export default class Spaces extends View {
 
   // Spaces in order, each worktree space moved under its main checkout's.
   ordered() {
-    const sp = spaces(), ps = panes();
+    const ps = panes(), raw = spaces();
+    // An agent shown as Chat has no pane, so Herdr leaves it out of the space's status: count it in.
+    // terminals() copies every terminal: read it only when a chat pane is open.
+    const sp = !ps.some((p) => p.mod === "chat") ? raw
+      : spacesWithChats(raw, chatAgents({ panes: ps, terminals: terminals(), spaces: raw, focusedPane: focused()?.pane ?? null, seen: shared("chat.seen") ?? {} }));
     const ready = (w) => this.shown.has(w.id) || where(w, ps) in this.git || Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
     const list = sp.map((w, i) => ({ w, i, g: this.git[where(w, ps)] ?? null }));

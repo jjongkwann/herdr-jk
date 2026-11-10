@@ -8,11 +8,60 @@
 // the look of Herdr UI's browser tabs: back, forward, reload, the address,
 // zoom, Annotate and open-in-browser. Annotating shows the browser-notes
 // panel in the layout's right-hand stack.
+//
+// Agent panes (Claude Code, Codex) get a Chat | Terminal switch when Shepherdr's `chat` mod is
+// installed. Chat puts the `chat` mod in the agent pane's exact spot: it splits beside the
+// agent's pane, then the agent's terminal is parked (it keeps running, without a pane), so the
+// chat takes the whole slot. Terminal does the reverse. The agent's core label
+// herdr.chat=<chat pane> says which chat shows which agent; omarchy-agents and omarchy-spaces
+// read it to keep listing the parked agent. A chat pane wears its agent's header, and its ✕
+// ends the agent after asking. "omarchy-pane.toggle" switches the focused pane.
+// Adapted from Shepherdr's pane-chat (MIT, see NOTICE).
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, InputState, Input } from "gpui-base";
-import { panes, props, run, theme, home, exec, layout, shared, setShared, window } from "herdr";
+import { panes, terminals, props, run, theme, home, exec, hc, notify, nextCommand, readTextFile, appHome, layout, shared, setShared, window } from "herdr";
 import { act, readLive, watchLive, touches } from "./browser/client.js";
+
+const CHAT = "chat";
+const LABEL = "herdr.chat";
+// When a toggle last swapped a pane (every copy of this build shares it).
+let lastSwap = 0;
+// Whether Shepherdr's chat mod is installed, looked up once for every copy. Without it there
+// is no switch.
+let chatInstalled = false;
+let chatCheck = null;
+
+// Chat reads Claude Code's and Codex's own session logs; other agents have no chat.
+const chatty = (p) => Boolean(p?.terminal) && (["claude-code", "codex"].includes(p.app) || ["claude", "codex"].includes(p.program?.key));
+
+// The chat pane showing a terminal, if one is open.
+function chatOf(terminal) {
+  const c = terminals().find((x) => x.address === terminal)?.labels?.[LABEL];
+  return c && panes().some((p) => p.pane === c && p.mod === CHAT) ? c : null;
+}
+
+// The live agent a chat pane shows.
+const agentOf = (chat) => terminals().find((x) => x.labels?.[LABEL] === chat && x.state === "live")?.address ?? null;
+
+// A parked agent, shown in a chat pane: what the header shows for it.
+function parked(terminal) {
+  const k = terminals().find((x) => x.address === terminal);
+  if (!k) return null;
+  const st = ["working", "blocked", "done", "idle"].includes(k.status) ? k.status : null;
+  return { terminal, program: k.program, status: st, cwd: k.foreground?.cwd ?? k.cwd ?? null, title: k.title ?? "" };
+}
+
+// One app command, waited for (the swap's steps must go in order).
+async function app(name, args) {
+  const r = await exec("herdr-app", ["do", name, ...Object.entries(args).flatMap(([k, v]) => [`--${k}`, typeof v === "string" ? v : JSON.stringify(v)])]);
+  let out = {};
+  try { out = JSON.parse(r.stdout || "{}"); } catch {}
+  if (r.code !== 0 || out.error) throw new Error(out.error || r.stderr.trim() || `${name} failed`);
+  return out;
+}
+
+const failed = (e) => String(e?.message ?? e ?? "").trim() || "Something went wrong.";
 
 function icon(p, size, color) {
   if (!p?.icon) return null;
@@ -65,6 +114,32 @@ export default class Pane extends View {
     this.live = null;
     this.flash = null;
     this.typing = false;
+    this.ending = false;
+    chatCheck ??= readTextFile(`${appHome()}/mods/${CHAT}/mod.json`).then((text) => text != null, () => false);
+    cx.spawn(async (cx) => {
+      chatInstalled = await chatCheck;
+      cx.notify();
+    });
+    // A copy just started (the swap's new pane) may still be handed the toggle that made it:
+    // it would swap straight back. Toggles go to copies at least 2 s old, one swap per 3 s.
+    this.born = Date.now();
+    // "omarchy-pane.toggle" (a key, or `herdr-app do`): the focused pane switches. At most 5 s
+    // per wait, so a reload's old build ends at its next cx use instead of staying in memory.
+    cx.spawn(async (cx) => {
+      let cmd = null;
+      for (;;) {
+        cmd ??= nextCommand();
+        const c = await Promise.race([cmd, cx.sleep(5000)]);
+        if (c === undefined) continue;
+        cmd = null;
+        const self = this.me();
+        if (c !== "toggle" || !self?.focused || !chatInstalled) continue;
+        if (Date.now() - this.born < 2000 || Date.now() - lastSwap < 3000) continue;
+        lastSwap = Date.now();
+        if (self.mod === CHAT) { if (agentOf(self.pane)) this.toTerminal(self.pane, cx); }
+        else if (chatty(self)) this.toChat(self, cx);
+      }
+    });
     this.address = InputState.new({ placeholder: "Enter an address" });
     this.address.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.address.on("blur", (_e, cx) => {
@@ -153,12 +228,129 @@ export default class Pane extends View {
     if (before.hidden) run("layout.hide", { id: "panel" });
   }
 
+  // Terminal → Chat: the chat takes this agent pane's spot.
+  toChat(p, cx) {
+    const open = chatOf(p.terminal);
+    if (open) { run("pane.focus", { pane: open }); return; }
+    if (this.busy) return;
+    this.busy = true;
+    const terminal = p.terminal;
+    cx.spawn(async (cx) => {
+      try {
+        const out = await app("pane.split", { direction: "right", pane: p.pane, mod: CHAT, props: { terminal } });
+        if (!out.pane) throw new Error("Herdr didn't open the chat");
+        // The agent knows its chat: if that pane goes with its tab or space, omarchy-agents
+        // ends the agent (its sweep), as closing its own pane would have.
+        await hc(["label", terminal, `${LABEL}=${out.pane}`]);
+        run("pane.focus", { pane: out.pane });
+        // Last: parking removes this pane, and this header with it. The chat turns core keep
+        // back on once the park has gone through.
+        await app("terminal.park", { terminal });
+      } catch (e) {
+        notify({ title: "Chat didn't open", body: failed(e), level: "error" });
+      }
+      this.busy = false;
+      cx.notify();
+    });
+  }
+
+  // Chat → Terminal: the agent's terminal gets a pane beside the chat, then the chat closes,
+  // so the terminal is back in the same spot.
+  toTerminal(chat, cx) {
+    const terminal = agentOf(chat);
+    // Not running, or still in a pane of its own (a chat opened beside it): just close the chat.
+    const own = terminal && panes().find((x) => x.terminal === terminal);
+    if (!terminal || own) {
+      const zoomed = panes().find((x) => x.pane === chat)?.zoomed;
+      run("pane.close", { pane: chat });
+      if (terminal) hc(["label", terminal, `${LABEL}=`]);
+      if (own) { if (zoomed && own.zoomed) run("pane.zoom", { pane: own.pane }); run("pane.focus", { pane: own.pane }); }
+      return;
+    }
+    if (this.busy) return;
+    this.busy = true;
+    cx.spawn(async (cx) => {
+      try {
+        await app("pane.focus", { pane: chat });
+        const out = await app("terminal.keep", { terminal, place: "right" });
+        await hc(["label", terminal, `${LABEL}=`]);
+        if (out.pane) run("pane.focus", { pane: out.pane });
+        // Last: closing the chat removes this header too.
+        await app("pane.close", { pane: chat });
+      } catch (e) {
+        notify({ title: "Terminal didn't come back", body: failed(e), level: "error" });
+      }
+      this.busy = false;
+      cx.notify();
+    });
+  }
+
+  // A chat pane's ✕ does what an agent pane's does: ends the agent, and the pane goes. It asks
+  // first, in the header itself (this.ending).
+  closeChat(chat) {
+    this.ending = false;
+    const terminal = agentOf(chat);
+    if (terminal) run("terminal.kill", { terminal });
+    run("pane.close", { pane: chat });
+  }
+
+  // A 20 px text button for the header's "End …?" question.
+  textButton(t, id, label, primary, onClick) {
+    return div()
+      .id(id)
+      .h(20)
+      .px(8)
+      .flex_none()
+      .flex()
+      .items_center()
+      .rounded(0)
+      .border_1()
+      .cursor_pointer()
+      .when(primary, (e) => e.bg(t.blocked).border_color(t.blocked).text_color(t.background).hover((s) => s.bg(t.blocked + "d9")))
+      .when(!primary, (e) => e.border_color(t.border).text_color(t.foreground).hover((s) => s.bg(t.foreground + "14").border_color(t.foreground + "40")))
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        onClick();
+        cx.notify();
+      })
+      .child(label);
+  }
+
+  // Chat | Terminal, two square segments; the one showing is filled.
+  switcher(t, pane, chatMode, onChat, onTerminal) {
+    const seg = (id, label, on, fn) => div()
+      .id(id)
+      .h_full()
+      .px(8)
+      .flex()
+      .items_center()
+      .when(on, (e) => e.bg(t.foreground + "2e").text_color(t.foreground))
+      .when(!on, (e) => e.text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.foreground + "14").text_color(t.foreground)))
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        if (!on) fn(cx);
+        cx.notify();
+      })
+      .child(label);
+    return h_flex()
+      .id(`ph-mode-${pane}`)
+      .h(20)
+      .flex_none()
+      .rounded(0)
+      .border_1()
+      .border_color(t.border)
+      .text_size(11)
+      .child(seg(`ph-chat-${pane}`, "Chat", chatMode, onChat))
+      .child(div().w(1).h_full().bg(t.border))
+      .child(seg(`ph-term-${pane}`, "Terminal", !chatMode, onTerminal));
+  }
+
   // A tab's only pane has nothing to zoom over.
   alone(p) {
     return panes().filter((other) => other.tab === p.tab).length === 1;
   }
 
-  button(t, id, icon, command, args) {
+  button(t, id, icon, command, args, fn = null) {
     return div()
       .id(id)
       .p(3)
@@ -169,7 +361,8 @@ export default class Pane extends View {
       .hover((s) => s.bg(t.foreground + "14").border_color(t.foreground + "40").text_color(t.foreground))
       .on_click((_e, cx) => {
         cx.stop_propagation();
-        run(command, args);
+        if (fn) fn(); else run(command, args);
+        cx.notify();
       })
       .child(svg(`mods/omarchy-pane/${icon}.svg`).size(14));
   }
@@ -284,17 +477,24 @@ export default class Pane extends View {
 
   render(cx) {
     const t = theme();
-    const p = this.me();
-    if (!p) return div();
-    if (this.live && p.terminal === this.terminal) return this.browserHeader(t, p);
+    const self = this.me();
+    if (!self) return div();
+    if (this.live && self.terminal === this.terminal) return this.browserHeader(t, self);
+    // A chat pane wears its agent's header: its name, folder and status.
+    const chatMode = self.mod === CHAT;
+    const agent = chatMode ? agentOf(self.pane) : null;
+    const p = (agent && parked(agent)) ?? self;
     // The icon names the program; the header says what it works on: its title, else the folder.
     const clean = (p.title ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
     // A shell's title is often just its terminal address ("t4c"), which says nothing either.
     const own = clean && clean !== p.program?.name && clean !== "Claude Code" && clean !== p.terminal ? clean : "";
-    const name = own || folder(p.cwd).split(/[\\/]/).filter(Boolean).pop() || p.program?.name || "shell";
+    const name = chatMode && !agent ? "Chat" : own || folder(p.cwd).split(/[\\/]/).filter(Boolean).pop() || p.program?.name || "shell";
     const pic = icon(p.program, 14, t.dim);
     const st = p.status;
-    const pane = p.pane;
+    const pane = self.pane;
+    const canSwitch = chatInstalled && (chatMode ? Boolean(agent) : chatty(self));
+    const prog = p.program?.name || "the agent";
+    const asking = Boolean(agent) && this.ending;
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
@@ -306,7 +506,7 @@ export default class Pane extends View {
       .border_b(1)
       .border_color(t.border)
       .text_size(12)
-      .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
+      .on_hover((hovered, cx) => { this.hovered = hovered; if (!hovered) this.ending = false; cx.notify(); })
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), (el) => el.child(pic))
       .child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name))
@@ -314,12 +514,23 @@ export default class Pane extends View {
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(0).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
       .when(st === "done", el => el.child(div().size(7).flex_none().rounded(0).bg(t.done)))
+      // Ending a chat's agent asks first, in place of the hover buttons.
+      .when(asking, el => el
+        .child(div().flex_none().whitespace_nowrap().text_color(t.foreground).child(`End ${prog}?`))
+        .child(this.textButton(t, `ph-end-no-${pane}`, "Cancel", false, () => { this.ending = false; }))
+        .child(this.textButton(t, `ph-end-${pane}`, "End agent", true, () => this.closeChat(pane))))
       // A zoomed pane shows only its unzoom button, always.
-      .when(p.zoomed, el => el.child(this.button(t, `ph-z-${pane}`, "unzoom", "pane.zoom", { pane })))
-      .when(this.hovered && !p.zoomed, el => el
+      .when(self.zoomed && !asking, el => el.child(this.button(t, `ph-z-${pane}`, "unzoom", "pane.zoom", { pane })))
+      .when(this.hovered && !self.zoomed && !asking, el => el
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
-        .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane }))
-        .when(!this.alone(p), (e) => e.child(this.button(t, `ph-z-${pane}`, "zoom", "pane.zoom", { pane }))));
+        .child(agent
+          ? this.button(t, `ph-x-${pane}`, "close", null, null, () => { this.ending = true; }).tooltip(`End ${prog}`)
+          : this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane }))
+        .when(!this.alone(self), (e) => e.child(this.button(t, `ph-z-${pane}`, "zoom", "pane.zoom", { pane }))))
+      // After the hover buttons, so Chat | Terminal never moves under the pointer.
+      .when(canSwitch, (el) => el.child(this.switcher(t, pane, chatMode,
+        (cx) => this.toChat(self, cx),
+        (cx) => this.toTerminal(pane, cx))));
   }
 }
