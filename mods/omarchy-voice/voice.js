@@ -1,0 +1,99 @@
+// Recording and transcription for omarchy-voice, all on this computer: ffmpeg records the default
+// microphone (AVFoundation) to a 16 kHz mono WAV, whisper.cpp writes it down. Every function takes the
+// `exec` to run programs with (herdr's in the mod, Node's in tests), so this file imports nothing.
+// The flow and the clean-up of whisper's output follow Shepherdr's chat dictation (mods/chat/dictate.js, MIT).
+
+// The model the mod looks for first (multilingual, good Korean, a few seconds on Apple Silicon).
+export const MODEL = "ggml-large-v3-turbo-q5_0.bin";
+// Longest recording; ffmpeg stops by itself after this many seconds.
+export const MAX_SECONDS = 300;
+
+const BREW = ["/opt/homebrew/bin", "/usr/local/bin"];
+
+// The first program of `names` that runs here (the PATH, then Homebrew's folders), or null.
+async function which(exec, names) {
+  const r = await exec("sh", ["-c",
+    'for n in "$@"; do w=$(command -v "$n") && { echo "$w"; exit 0; }; for d in ' + BREW.join(" ") + '; do [ -x "$d/$n" ] && { echo "$d/$n"; exit 0; }; done; done; true',
+    "x", ...names]).catch(() => null);
+  return r?.stdout.trim() || null;
+}
+
+// The model to use from a folder listing: MODEL if present, else another ggml model (never a
+// Core ML encoder or a partial download), else null.
+export function pickModel(names) {
+  if (names.includes(MODEL)) return MODEL;
+  return names.filter((n) => /^ggml-.+\.bin$/.test(n) && !/encoder/.test(n)).sort()[0] ?? null;
+}
+
+// What dictation needs: { ffmpeg, whisper, model } with null for whatever is missing.
+export async function findTools(exec, modelDir) {
+  const [ffmpeg, whisper, listing] = await Promise.all([
+    which(exec, ["ffmpeg"]),
+    which(exec, ["whisper-cli", "whisper-cpp"]),
+    exec("ls", ["-1", modelDir]).then((r) => r.stdout).catch(() => ""),
+  ]);
+  const name = pickModel(listing.split("\n").map((l) => l.trim()).filter(Boolean));
+  return { ffmpeg, whisper, model: name ? `${modelDir}/${name}` : null };
+}
+
+// One sentence on what is missing and how to get it, or null when everything is there.
+export function missing(tools, modelDir) {
+  const lacks = [];
+  if (!tools.ffmpeg) lacks.push("ffmpeg (brew install ffmpeg)");
+  if (!tools.whisper) lacks.push("whisper.cpp (brew install whisper-cpp)");
+  if (!tools.model) lacks.push(`a whisper model in ${modelDir} (e.g. ${MODEL} from huggingface.co/ggerganov/whisper.cpp)`);
+  return lacks.length ? `Dictation needs ${lacks.join(", ")}.` : null;
+}
+
+// Starts ffmpeg in the background, writing `file`; its pid goes to `file.pid`, its log to `file.log`.
+// ffmpeg quits at once when the microphone is refused or missing, so the shell watches it for 0.8 s.
+// Resolves with null once it is recording, or with what went wrong.
+export async function startRecording(exec, ffmpeg, file) {
+  const r = await exec("sh", ["-c",
+    'mkdir -p "$(dirname "$2")" && rm -f "$2" "$2.log" || exit 2; ' +
+    'nohup "$1" -nostdin -hide_banner -loglevel error -f avfoundation -i ":default" -t "$3" -ac 1 -ar 16000 -c:a pcm_s16le -y "$2" </dev/null >"$2.log" 2>&1 & ' +
+    'p=$!; echo $p > "$2.pid"; i=0; while [ $i -lt 8 ]; do sleep 0.1; kill -0 $p 2>/dev/null || { rm -f "$2.pid"; cat "$2.log"; exit 1; }; i=$((i+1)); done',
+    "x", ffmpeg, file, String(MAX_SECONDS)]);
+  return r.code === 0 ? null : recorderTrouble(r.stdout);
+}
+
+// Stops ffmpeg so it finishes the WAV, and waits for it to exit (at most two seconds). SIGTERM, not
+// SIGINT: a job started in the background by a non-interactive shell starts with SIGINT ignored.
+export async function stopRecording(exec, file) {
+  await exec("sh", ["-c",
+    'p=$(cat "$1.pid" 2>/dev/null) || exit 0; kill -TERM "$p" 2>/dev/null; i=0; while kill -0 "$p" 2>/dev/null && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done; kill -KILL "$p" 2>/dev/null; rm -f "$1.pid"; true',
+    "x", file]);
+}
+
+// Throws a recording away (the mod reloading or closing mid-recording).
+export async function cancelRecording(exec, file) {
+  await exec("sh", ["-c", 'p=$(cat "$1.pid" 2>/dev/null) && kill -TERM "$p" 2>/dev/null; rm -f "$1.pid" "$1" "$1.log"; true', "x", file]).catch(() => null);
+}
+
+// Writes `file` down. Resolves with { text } ("" when nothing was heard) or { error }.
+export async function transcribe(exec, tools, file) {
+  const r = await exec(tools.whisper, ["-m", tools.model, "-f", file, "-l", "auto", "-nt", "-np", "-t", "8"], { timeout: 120000 })
+    .catch((e) => ({ code: -1, stdout: "", stderr: String(e?.message ?? e) }));
+  if (r.code !== 0) return { error: whisperTrouble(r.stderr) };
+  return { text: clean(r.stdout) };
+}
+
+// What went wrong with the recorder, in plain words with what to do.
+export function recorderTrouble(log) {
+  if (/not authorized|permission|denied/i.test(log)) return "Herdr may not use the microphone. Allow it in System Settings › Privacy & Security › Microphone, then try again.";
+  if (/no such|not found|input\/output|could not|failed to/i.test(log)) return "No microphone was found. Check the input device, then try again.";
+  return "Recording didn't start. Check the microphone, then try again.";
+}
+
+// What went wrong with whisper.cpp. Only its "error:" lines count: it logs loading the model on every run.
+export function whisperTrouble(said) {
+  const errors = said.split("\n").filter((l) => /^error:/i.test(l.trim())).join("\n");
+  if (/model|context/i.test(errors)) return "The whisper model couldn't be loaded. Download it again.";
+  if (/audio|input file|read/i.test(errors)) return "Nothing was recorded. Check the microphone, then try again.";
+  return "Couldn't write that down. Try again.";
+}
+
+// whisper's text without its markers for silence and noise ("[BLANK_AUDIO]", "(music)", "[음악]").
+export function clean(text) {
+  return text.split("\n").map((l) => l.replace(/\[[^\]]*\]|\([^)]*\)/g, "").trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}

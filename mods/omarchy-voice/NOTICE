@@ -1,0 +1,5 @@
+mods/omarchy-voice/voice.js follows the dictation flow of Shepherdr's chat mod
+(mods/chat/dictate.js, MIT License): the recording state machine, the whisper.cpp flags
+(-l auto -nt -np) and the clean-up of whisper's silence and noise markers. The recorder
+(ffmpeg with AVFoundation instead of pw-record) and the paste into terminals are new.
+mic.svg is Lucide's "mic" icon (ISC License).
