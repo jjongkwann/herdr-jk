@@ -7,8 +7,6 @@
     8
   ],
   "theme": "tokyo-night",
-  "font": "CaskaydiaMono Nerd Font",
-  "ui_font": "CaskaydiaMono Nerd Font",
   "background": {
     "image": "backgrounds/omarchy/tokyo-night/1-winding-road.webp",
     "fit": "cover"
@@ -208,7 +206,7 @@
                           "id": "files",
                           "type": "block",
                           "content": {
-                            "mod": "omarchy-files"
+                            "mod": "files-plus"
                           }
                         },
                         {
