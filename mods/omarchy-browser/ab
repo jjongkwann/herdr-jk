@@ -1,0 +1,11 @@
+#!/bin/sh
+# The omarchy browser for agents: herdr-app's own browser (bin/herdr-browser, agent-browser 0.41.1)
+# under one fixed key, so every agent and the Browser pane share one session (herdr-omarchy) and
+# one profile (~/.herdr/browser/omarchy) whose sign-ins persist. Takes any agent-browser command:
+#   ab open https://example.com; ab snapshot -i; ab click @e3; ab close
+# Exit 3: the person took over in the Browser pane; wait until they hand it back.
+PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
+# The app's folder: $HERDR_APP_HOME, else the one this mod is installed in, else the default.
+app=${HERDR_APP_HOME:-$(cd "$(dirname "$0")/../.." && pwd)}
+[ -x "$app/bin/herdr-browser" ] || app="$HOME/.config/herdr-app"
+exec "$app/bin/herdr-browser" --task @omarchy "$@"
