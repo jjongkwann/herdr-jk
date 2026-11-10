@@ -66,6 +66,16 @@
           }
         },
         {
+          "id": "voice",
+          "type": "block",
+          "size": {
+            "px": 56
+          },
+          "content": {
+            "mod": "omarchy-voice"
+          }
+        },
+        {
           "id": "bar-right",
           "type": "block",
           "size": {
