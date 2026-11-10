@@ -35,21 +35,32 @@ let chatCheck = null;
 // Chat reads Claude Code's and Codex's own session logs; other agents have no chat.
 const chatty = (p) => Boolean(p?.terminal) && (["claude-code", "codex"].includes(p.app) || ["claude", "codex"].includes(p.program?.key));
 
+// Labels hold ids local to the terminal's machine; the app shows another machine's ids as
+// "<machine>/<id>". Reading, a label is qualified with its terminal's machine (one already
+// prefixed is kept); writing, the prefix is stripped.
+const machineOf = (address) => (String(address ?? "").includes("/") ? address.split("/")[0] : null);
+const qualify = (machine, id) => (machine && id && !id.includes("/") ? `${machine}/${id}` : id);
+const chatPaneOf = (k) => qualify(machineOf(k.address), k.labels?.[LABEL] ?? null);
+const local = (terminal, pane) => {
+  const m = machineOf(terminal);
+  return m && pane.startsWith(`${m}/`) ? pane.slice(m.length + 1) : pane;
+};
+
 // The chat pane showing a terminal, if one is open.
 function chatOf(terminal) {
-  const c = terminals().find((x) => x.address === terminal)?.labels?.[LABEL];
+  const k = terminals().find((x) => x.address === terminal);
+  const c = k && chatPaneOf(k);
   return c && panes().some((p) => p.pane === c && p.mod === CHAT) ? c : null;
 }
 
-// The live agent a chat pane shows.
-const agentOf = (chat) => terminals().find((x) => x.labels?.[LABEL] === chat && x.state === "live")?.address ?? null;
+// The live agent a chat pane shows (one terminals() copy: the header reads it once per render).
+const agentEntry = (chat) => terminals().find((x) => x.state === "live" && chatPaneOf(x) === chat) ?? null;
+const agentOf = (chat) => agentEntry(chat)?.address ?? null;
 
 // A parked agent, shown in a chat pane: what the header shows for it.
-function parked(terminal) {
-  const k = terminals().find((x) => x.address === terminal);
-  if (!k) return null;
+function parked(k) {
   const st = ["working", "blocked", "done", "idle"].includes(k.status) ? k.status : null;
-  return { terminal, program: k.program, status: st, cwd: k.foreground?.cwd ?? k.cwd ?? null, title: k.title ?? "" };
+  return { terminal: k.address, program: k.program, status: st, cwd: k.foreground?.cwd ?? k.cwd ?? null, title: k.title ?? "" };
 }
 
 // One app command, waited for (the swap's steps must go in order).
@@ -241,7 +252,8 @@ export default class Pane extends View {
         if (!out.pane) throw new Error("Herdr didn't open the chat");
         // The agent knows its chat: if that pane goes with its tab or space, omarchy-agents
         // ends the agent (its sweep), as closing its own pane would have.
-        await hc(["label", terminal, `${LABEL}=${out.pane}`]);
+        // On the terminal's machine, without the app's "<machine>/" prefix.
+        await hc(["label", terminal, `${LABEL}=${local(terminal, out.pane)}`]);
         run("pane.focus", { pane: out.pane });
         // Last: parking removes this pane, and this header with it. The chat turns core keep
         // back on once the park has gone through.
@@ -273,8 +285,18 @@ export default class Pane extends View {
       try {
         await app("pane.focus", { pane: chat });
         const out = await app("terminal.keep", { terminal, place: "right" });
+        // A keep that waits on the machine (pending) can still fail: the label and the chat stay
+        // until the terminal has its pane, so the agent never runs unseen with neither.
+        if (out.pending) {
+          const until = Date.now() + 15000;
+          while (!panes().some((x) => x.terminal === terminal)) {
+            if (Date.now() > until) throw new Error("Herdr didn't give the terminal a pane");
+            await cx.sleep(250);
+          }
+        }
         await hc(["label", terminal, `${LABEL}=`]);
-        if (out.pane) run("pane.focus", { pane: out.pane });
+        const back = out.pane ?? panes().find((x) => x.terminal === terminal)?.pane;
+        if (back) run("pane.focus", { pane: back });
         // Last: closing the chat removes this header too.
         await app("pane.close", { pane: chat });
       } catch (e) {
@@ -482,8 +504,9 @@ export default class Pane extends View {
     if (this.live && self.terminal === this.terminal) return this.browserHeader(t, self);
     // A chat pane wears its agent's header: its name, folder and status.
     const chatMode = self.mod === CHAT;
-    const agent = chatMode ? agentOf(self.pane) : null;
-    const p = (agent && parked(agent)) ?? self;
+    const entry = chatMode ? agentEntry(self.pane) : null;
+    const agent = entry?.address ?? null;
+    const p = entry ? parked(entry) : self;
     // The icon names the program; the header says what it works on: its title, else the folder.
     const clean = (p.title ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
     // A shell's title is often just its terminal address ("t4c"), which says nothing either.

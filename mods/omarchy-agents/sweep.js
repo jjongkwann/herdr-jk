@@ -7,6 +7,7 @@
 // MIT, Copyright (c) 2026 Elias Stravik; the license text is in omarchy-pane/NOTICE).
 
 import { machines, panes, terminals, run, exec, hc, appHome } from "herdr";
+import { chatPaneOf } from "./parked.js";
 
 const missing = new Set();
 const kept = new Set();
@@ -25,7 +26,8 @@ export function sweep() {
   const have = new Set(ps.map((p) => p.pane));
   const own = new Set(ps.map((p) => p.terminal).filter(Boolean));
   for (const k of terminals()) {
-    const chat = k.labels?.["herdr.chat"];
+    // Compared as the app names panes: another machine's label is local to that machine.
+    const chat = chatPaneOf(k);
     if (!chat || k.state !== "live") { kept.delete(k.address); continue; }
     const machine = k.address.includes("/") ? k.address.split("/")[0] : "";
     if (!ready.has(machine) || have.has(chat) || own.has(k.address)) {

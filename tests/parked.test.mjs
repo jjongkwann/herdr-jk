@@ -71,3 +71,49 @@ test("parked agents sit in space and tab order among agents()", () => {
 test("omarchy-agents and omarchy-spaces carry the same parked.js", () => {
   assert.equal(readFileSync("mods/omarchy-spaces/parked.js", "utf8"), readFileSync("mods/omarchy-agents/parked.js", "utf8"));
 });
+
+test("labels hold the chat pane's id local to the terminal's machine", async () => {
+  const { qualify, machineOf, chatPaneOf } = await import("../mods/omarchy-agents/parked.js");
+  assert.equal(machineOf("t5"), null);
+  assert.equal(machineOf("mini/t5"), "mini");
+  assert.equal(qualify(null, "p9"), "p9");
+  assert.equal(qualify("mini", "p9"), "mini/p9");
+  // A label written with the prefix already (older builds) still matches.
+  assert.equal(qualify("mini", "mini/p9"), "mini/p9");
+  assert.equal(chatPaneOf({ address: "t5", labels: { "herdr.chat": "p9" } }), "p9");
+  assert.equal(chatPaneOf({ address: "mini/t5", labels: { "herdr.chat": "p9" } }), "mini/p9");
+  assert.equal(chatPaneOf({ address: "mini/t5", labels: {} }), null);
+});
+
+test("a remote agent parked behind its machine's chat pane is found by its qualified id", () => {
+  const ps = [
+    { pane: "p9", terminal: null, mod: "chat", tab: "a" },
+    { pane: "mini/p9", terminal: null, mod: "chat", tab: "mini/x" },
+  ];
+  const sp = [...spaces, { id: "mini/s1", name: "mini", status: null, tabs: [{ id: "mini/x", index: 1, name: "1", status: null }] }];
+  const ts = [
+    // The local agent behind local p9, and mini's agent behind mini's own p9 (label "p9").
+    { address: "t5", state: "live", status: "working", program, labels: { "herdr.chat": "p9" } },
+    { address: "mini/t5", state: "live", status: "blocked", program, labels: { "herdr.chat": "p9" } },
+    { address: "mini/t6", state: "live", status: "idle", program, labels: { "herdr.chat": "mini/p9" } },
+  ];
+  const out = chatAgents({ panes: ps, terminals: ts, spaces: sp });
+  assert.deepEqual(out.map((a) => [a.address, a.pane, a.space]), [["t5", "p9", "s1"], ["mini/t5", "mini/p9", "mini/s1"], ["mini/t6", "mini/p9", "mini/s1"]]);
+});
+
+test("omarchy-pane writes the label without the app's machine prefix and reads it back qualified", async () => {
+  const { readFileSync: read } = await import("node:fs");
+  const vm = await import("node:vm");
+  const src = read("mods/omarchy-pane/main.js", "utf8");
+  const start = src.indexOf("const machineOf =");
+  const end = src.indexOf("\n};\n", src.indexOf("const local =")) + 3;
+  const ctx = { LABEL: "herdr.chat" };
+  vm.runInNewContext(`${src.slice(start, end)}\nthis.h = { qualify, chatPaneOf, local };`, ctx);
+  const { chatPaneOf, local } = ctx.h;
+  assert.equal(local("t5", "p9"), "p9");
+  assert.equal(local("mini/t5", "mini/p9"), "p9");
+  // Written, then read back as the app names the pane.
+  for (const [terminal, pane] of [["t5", "p9"], ["mini/t5", "mini/p9"]]) {
+    assert.equal(chatPaneOf({ address: terminal, labels: { "herdr.chat": local(terminal, pane) } }), pane);
+  }
+});

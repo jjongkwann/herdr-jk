@@ -13,6 +13,14 @@
 export const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
 const STATES = ["working", "blocked", "done", "idle"];
 
+// The label holds the chat pane's id local to the terminal's machine; the app shows another
+// machine's ids as "<machine>/<id>". machineOf("mini/t5") is "mini" (null: this computer), and
+// qualify gives the label's pane as the app names it. An id already prefixed is kept.
+export const machineOf = (address) => (String(address ?? "").includes("/") ? address.split("/")[0] : null);
+export const qualify = (machine, id) => (machine && id && !id.includes("/") ? `${machine}/${id}` : id);
+// The chat pane a terminal's herdr.chat label names, as the app's pane ids name it.
+export const chatPaneOf = (k) => qualify(machineOf(k.address), k.labels?.["herdr.chat"] ?? null);
+
 // Shaped like agents()'s entries; `pane` is the chat pane, `cwd` the terminal's folder.
 // lists: { panes, terminals, spaces, focusedPane, seen } (seen: shared "chat.seen").
 export function chatAgents({ panes, terminals, spaces, focusedPane = null, seen = {} }) {
@@ -22,7 +30,7 @@ export function chatAgents({ panes, terminals, spaces, focusedPane = null, seen 
   const where = new Map(spaces.flatMap((s) => s.tabs.map((t) => [t.id, { s, t }])));
   const out = [];
   for (const k of terminals) {
-    const pane = k.labels?.["herdr.chat"];
+    const pane = chatPaneOf(k);
     const p = pane && chats.get(pane);
     if (!p || k.state !== "live" || own.has(k.address)) continue;
     let status = STATES.includes(k.status) ? k.status : "idle";
