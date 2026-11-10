@@ -7,6 +7,7 @@
     8
   ],
   "theme": "tokyo-night",
+  "terminal_opacity": 0.7,
   "background": {
     "image": "backgrounds/omarchy/tokyo-night/1-winding-road.webp",
     "fit": "cover"
@@ -100,7 +101,8 @@
               "border": {
                 "width": 2,
                 "color": "border"
-              }
+              },
+              "radius": 12
             },
             {
               "id": "agents",
@@ -116,7 +118,8 @@
               "border": {
                 "width": 2,
                 "color": "border"
-              }
+              },
+              "radius": 12
             },
             {
               "id": "sidebar-footer",
@@ -134,7 +137,8 @@
               "border": {
                 "width": 2,
                 "color": "border"
-              }
+              },
+              "radius": 12
             }
           ],
           "gap": 10
@@ -158,7 +162,8 @@
               },
               "content": {
                 "mod": "omarchy-tabs"
-              }
+              },
+              "radius": 12
             },
             {
               "id": "work-body",
@@ -179,7 +184,6 @@
                         "height": 30,
                         "position": "top"
                       },
-                      "background": "background",
                       "border": {
                         "width": 2,
                         "color": "border"
@@ -188,7 +192,7 @@
                         "width": 2,
                         "color": "accent"
                       },
-                      "radius": 0,
+                      "radius": 12,
                       "gap": 10,
                       "lone": true
                     }
@@ -258,7 +262,8 @@
                   "border": {
                     "width": 2,
                     "color": "border"
-                  }
+                  },
+                  "radius": 12
                 }
               ]
             }

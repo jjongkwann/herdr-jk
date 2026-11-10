@@ -162,6 +162,8 @@ export default class Tabs extends View {
     const stop = (_e, cx) => cx.stop_propagation();
     const f = t.foreground, idle = f + "0a", hov = f + "14", sel = f + "2e";
     const allPanes = panes(), allTerminals = terminals();
+    // The strip's block may be rounded in the layout: its end cells follow, inside its border.
+    const strip = find(layout(), "tabs"), inner = Math.max(0, (strip?.radius ?? 0) - (strip?.border?.width ?? 0));
     const item = (c, i) => {
       const tabPanes = allPanes.filter(p => p.tab === c.id);
       const lead = tabPanes.find(p => p.program?.agent && p.status === c.status) ?? tabPanes.find(p => p.program?.agent) ?? tabPanes[0];
@@ -185,7 +187,7 @@ export default class Tabs extends View {
         ? agentPanes.map(p => `${p.program.name}: ${({ working: "working", blocked: "needs input", done: "done" })[p.status] ?? "idle"}`).join("\n")
         : [status, c.named && title && title !== c.name ? title : program?.name].filter(Boolean).join(" · ");
       const icons = (multi ? programs.slice(0, 3) : [program]).filter(p => p?.icon);
-      return h_flex().id(`tab-${c.id}`).w(240).h_full().px(10).gap(7).rounded(0).items_center().flex_none().text_size(12)
+      return h_flex().id(`tab-${c.id}`).w(240).h_full().px(10).gap(7).rounded(0).when(i === 0, el => el.rounded_l(inner)).items_center().flex_none().text_size(12)
         .tooltip(`${name}\n${detail}`)
         // The close button shows on the active tab and on the one under the pointer.
         .on_hover((over, cx) => { if (over) this.overTab = c.id; else if (this.overTab === c.id) this.overTab = null; cx.notify(); })
@@ -215,9 +217,9 @@ export default class Tabs extends View {
       : [];
     this.syncPanel(space, panel, body, enabled);
     const panelButton = (id, label, icon) => {
-      const on = panel && !panel.hidden && body?.active === id;
+      const on = panel && !panel.hidden && body?.active === id, last = id === enabled[enabled.length - 1];
       // Full-height cells like the tabs, so the strip has one rhythm and no odd gaps.
-      return h_flex().id(`panel-${id}`).h_full().px(12).gap(6).flex_none().items_center().rounded(0).border_l(1).border_color(t.border)
+      return h_flex().id(`panel-${id}`).h_full().px(12).gap(6).flex_none().items_center().rounded(0).when(last, el => el.rounded_r(inner)).border_l(1).border_color(t.border)
         .text_size(12).bg(on ? sel : idle).text_color(on ? t.foreground : t.muted)
         .hover(s => s.bg(on ? sel : hov)).on_mouse_down("left", stop)
         .on_click(() => {
