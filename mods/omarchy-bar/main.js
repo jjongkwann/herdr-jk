@@ -30,14 +30,6 @@ async function nextWallpaper() {
   setWallpaper(all[(all.indexOf(layout()?.background?.image) + 1) % all.length]);
 }
 
-// The wallpaper belongs to the theme: a theme change from any picker brings its first one.
-async function matchWallpaper(name) {
-  if (layout()?.background?.image?.startsWith(`backgrounds/omarchy/${name}/`)) return;
-  const [first] = await wallpapers(name);
-  // A newer theme change may have come in while listing.
-  if (first && settings().theme === name) setWallpaper(first);
-}
-
 export default class OmarchyBar extends View {
   init(_props, cx) {
     // The bar is in the layout twice; one copy takes the key.
@@ -60,11 +52,6 @@ export default class OmarchyBar extends View {
   }
 
   left(row, t) {
-    const name = settings().theme;
-    if (name !== this.theme) {
-      this.theme = name;
-      matchWallpaper(name);
-    }
     const list = spaces();
     const zoomed = Boolean(list.find((s) => s.active)?.tabs.find((tab) => tab.active)?.zoomed);
     if (zoomed !== this.zoomed) {

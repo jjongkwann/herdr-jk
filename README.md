@@ -18,7 +18,7 @@ The Omarchy desktop, rebuilt inside Herdr. Your terminals and coding agents sit 
 - **AI usage in the top bar.** The 5-hour and 7-day quotas of the agents on screen sit in the middle of the bar, each with a bar in its provider's color. Claude profiles are named, so a work and a personal account are easy to tell apart. Click for reset times.
 - **Closed a tab by mistake? Bring it back.** `ctrl-alt-shift-t` reopens the last closed tab in the same place, with the same splits and sizes. Claude, Codex and pi come back in their own conversations, with their flags and profiles.
 - **Git without leaving the window.** The side panel shows your changes with a diff (wrap long lines, drag the split), commits, pushes, pulls, stashes and switches or creates branches. One click opens the full commit graph, with branch lanes, labels and right-click menus for checkout, merge, rebase, reset and tags.
-- **Omarchy's themes and wallpapers.** Every Omarchy theme ships with all of its wallpapers. The theme switcher is Omarchy 4's: big desktop previews, left and right to choose. A theme brings its own wallpaper, and `super-ctrl-w` cycles them. Light themes switch Herdr to light mode, dark ones back to dark.
+- **Omarchy's themes and wallpapers.** Every Omarchy theme ships with all of its wallpapers. The theme switcher is Omarchy 4's: big desktop previews, left and right to choose. `super-ctrl-b` picks a wallpaper from any theme, and `super-ctrl-w` cycles the current theme's. Light themes switch Herdr to light mode, dark ones back to dark.
 - **Omarchy's keys.** The layout uses Omarchy's own keys wherever GNOME leaves them free. `super-k` lists every key, with the ones that came with the layout set apart.
 - **Square dialogs that match.** The command palette, Settings, a Keybindings list and a mod manager that browses, reviews and installs community mods all share the same look.
 
@@ -66,6 +66,7 @@ These keys work only in the Omarchy layout, except Ctrl+arrows, which also apply
 | `super-shift-space` | Show or hide the top bar |
 | `super-k` | Show every key binding |
 | `super-ctrl-t` or `super-ctrl-shift-space` | Pick a theme |
+| `super-ctrl-b` | Pick a wallpaper, from any theme |
 | `super-ctrl-w` or `super-ctrl-space` | Change to the theme's next wallpaper |
 | `ctrl-,` | Open Settings |
 | `ctrl-shift-m` | Open the mod manager |

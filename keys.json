@@ -13,6 +13,7 @@
     "super-ctrl-w": "omarchy-bar.next-wallpaper",
     "super-ctrl-shift-space": "mod.open:omarchy-themes",
     "super-ctrl-t": "mod.open:omarchy-themes",
+    "super-ctrl-b": "mod.open:omarchy-backgrounds",
     "super-k": "mod.open:omarchy-keys",
     "alt-enter": "pane.split:right",
     "alt-shift-enter": "pane.split:down",
