@@ -61,7 +61,24 @@ export const PROVIDERS = {
           { short: k === "premium_interactions" ? "mo" : label[k], long: `Monthly ${label[k]} requests`, monthly: true }));
     },
   },
+  // No quota endpoint of its own: the numbers are the ones the agy statusline last saved.
+  antigravity: {
+    name: "Antigravity",
+    color: "#3186FF",
+    async usage(c) {
+      const buckets = [["gemini-5h", 5 * H], ["gemini-weekly", 7 * DAY], ["gemini-argon-wtu-weekly", 7 * DAY, "argon"], ["3p-5h", 5 * H, "3p"], ["3p-weekly", 7 * DAY, "3p"]];
+      return buckets.filter(([k]) => typeof c.quota[k]?.remaining_fraction === "number").map(([k, span, scope]) => {
+        const q = c.quota[k];
+        // A window whose reset has passed since the save started over.
+        const used = Date.parse(q.reset_time) < Date.now() ? 0 : (1 - q.remaining_fraction) * 100;
+        const w = win(span, used, q.reset_time);
+        return scope ? { ...w, short: `${w.short} ${scope}`, long: `${w.long} (${scope})` } : w;
+      });
+    },
+  },
 };
+
+const AGY_CACHE = ".gemini/antigravity-cli/quota-cache.json";
 
 // Multi-provider harnesses: which provider they use, and where their logins live.
 const HARNESS = {
@@ -89,6 +106,11 @@ async function creds(src) {
     const token = gh ?? apps.find(a => a?.oauth_token)?.oauth_token;
     if (!token) throw new Error("no GitHub Copilot login in ~/.config/github-copilot");
     return { token };
+  }
+  if (f.antigravity) {
+    const quota = (await json(AGY_CACHE))?.quota;
+    if (!quota) throw new Error("no quota saved by the agy statusline yet");
+    return { quota };
   }
   const e = (await json(HARNESS[f.harness].auth))?.[f.entry];
   if (e?.type !== "oauth") throw new Error(`no ${f.entry} login in ${f.harness}`);
@@ -123,11 +145,14 @@ export async function sourcesFor(v, claudeDirOf) {
   const icon = v.program.icon, tint = v.program.tint;
   if (key === "claude" || key === "claude-code") {
     const dir = await claudeDirOf(v.terminal);
-    const dirs = dir ? [dir] : claudeDirs.map(d => `${home()}/${d}`);
+    // No match for the terminal: ~/.claude, and another profile only when its folder has a login.
+    const known = claudeDirs.map(d => `${home()}/${d}`);
+    const dirs = dir ? [dir] : (await Promise.all(known.map(async (d, i) => (i === 0 || await json(`${d}/.credentials.json`) ? d : null)))).filter(Boolean);
     return Promise.all(dirs.map(async d => ({ id: `claude.${claudeLabel(d)}`, provider: "claude", agent, label: await claudeName(d), sub: d.replace(home(), "~"), icon, tint, from: { claude: d } })));
   }
   if (key === "codex") return [{ id: "codex", provider: "codex", agent, label: "codex", sub: "ChatGPT plan", icon, tint, from: { codex: true } }];
   if (key === "copilot") return [{ id: "copilot", provider: "copilot", agent, label: "copilot", sub: "GitHub Copilot", icon, tint, from: { copilot: true } }];
+  if (key === "antigravity") return [{ id: "antigravity", provider: "antigravity", agent, label: "agy", sub: "saved by the agy statusline", icon, tint, from: { antigravity: true } }];
   const h = HARNESS[key];
   if (!h) return [labelled(v)];
   const entry = await h.pick();
@@ -139,6 +164,17 @@ export async function sourcesFor(v, claudeDirOf) {
     return [{ id: "codex", provider, agent, label: key, sub: `via ${entry} (Codex login)`, icon, tint, from: { codex: true } }];
   }
   return [{ id: `${key}.${provider}`, provider, agent, label: key, sub: `via ${entry}`, icon, tint, from: { harness: key, entry } }];
+}
+
+// Shown whatever the tab holds: each of these agents this machine has a login (or saved quota) for.
+export async function alwaysSources(programs) {
+  const login = { claude: ".claude/.credentials.json", codex: ".codex/auth.json", antigravity: AGY_CACHE };
+  const out = [];
+  for (const [key, file] of Object.entries(login)) {
+    const program = programs.find(p => p.key === key);
+    if (program && await json(file)) out.push(...await sourcesFor({ program }, async () => null));
+  }
+  return out;
 }
 
 export async function fetchUsage(src) {

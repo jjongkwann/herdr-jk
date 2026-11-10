@@ -20,12 +20,12 @@ function usageHarness(files = {}, response = {}, status = 200, settings = {}) {
   };
   const providerSource = readFileSync(new URL('../mods/omarchy-ai-usage/providers.js', import.meta.url), 'utf8')
     .replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
-  const providers = Function(...Object.keys(dependencies), 'H', 'DAY', `${providerSource}\nreturn { PROVIDERS, sourcesFor, fetchUsage };`)(...Object.values(dependencies), H, DAY);
+  const providers = Function(...Object.keys(dependencies), 'H', 'DAY', `${providerSource}\nreturn { PROVIDERS, sourcesFor, alwaysSources, fetchUsage };`)(...Object.values(dependencies), H, DAY);
   Object.assign(dependencies, providers);
   const source = readFileSync(new URL('../mods/omarchy-ai-usage/main.js', import.meta.url), 'utf8')
     .replace(/^import .*;\n/gm, '').replace('export default class', 'class');
   const { refreshOne } = Function(...Object.keys(dependencies), `${source}\nreturn { refreshOne };`)(...Object.values(dependencies));
-  return { state, requests, route: (value, directory = null) => providers.sourcesFor(value, async () => directory), refreshOne };
+  return { state, requests, route: (value, directory = null) => providers.sourcesFor(value, async () => directory), always: providers.alwaysSources, refreshOne };
 }
 
 const agent = key => ({ terminal: 't1', program: { key, name: key, icon: `${key}.svg`, tint: true } });
@@ -97,10 +97,12 @@ test('failed credentials preserve last fetched usage without making requests', a
 });
 
 test('Claude account routing keeps work and personal sources separate', async () => {
-  const h = usageHarness();
+  const h = usageHarness({ '/home/test/.claude-personal/.credentials.json': { claudeAiOauth: { accessToken: 'personal-token' } } });
   assert.deepEqual((await h.route(agent('claude-code'))).map(s => [s.id, s.from.claude]), [
     ['claude.claude', '/home/test/.claude'], ['claude.personal', '/home/test/.claude-personal'],
   ]);
+  // A profile folder with no login is left out.
+  assert.deepEqual((await usageHarness().route(agent('claude-code'))).map(s => s.id), ['claude.claude']);
   const [personal] = await h.route(agent('claude-code'), '/home/test/.claude-personal');
   assert.equal(personal.id, 'claude.personal');
   assert.equal(personal.from.claude, '/home/test/.claude-personal');
@@ -178,4 +180,23 @@ test('settings.json claude_labels names a Claude profile outright', async () => 
     {}, 200, { claude_labels: { '~/.claude': 'Work' } });
   assert.equal((await route(agent('claude'), '/home/test/.claude'))[0].label, 'Work');
   assert.equal((await route(agent('claude'), '/home/test/.claude-other'))[0].label, 'Other');
+});
+
+test('logged-in agents show whatever the tab holds, and agy reads its saved quota', async () => {
+  const later = new Date(Date.now() + 3600e3).toISOString();
+  const h = usageHarness({
+    '/home/test/.codex/auth.json': { tokens: { access_token: 'codex-token', account_id: 'account' } },
+    '/home/test/.gemini/antigravity-cli/quota-cache.json': { quota: {
+      'gemini-5h': { remaining_fraction: 0.75, reset_time: later },
+      'gemini-weekly': { remaining_fraction: 0.5, reset_time: '2020-01-01T00:00:00Z' },
+    } },
+  });
+  const programs = ['claude', 'codex', 'antigravity', 'copilot'].map(key => ({ key, name: key, icon: null, tint: false }));
+  const sources = await h.always(programs);
+  // No Claude login file here, so Claude is left out.
+  assert.deepEqual(sources.map(s => s.id), ['codex', 'antigravity']);
+  await h.refreshOne(sources[1]);
+  const windows = h.state.get('omarchy-ai-usage.antigravity').windows;
+  assert.deepEqual(windows.map(w => [w.short, w.used]), [['5h', 25], ['7d', 0]]);
+  assert.equal(h.requests.length, 0);
 });

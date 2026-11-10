@@ -1,8 +1,8 @@
 import { View, div, image, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { agents, exec, focused, home, panes, shared, setShared, props, openOverlay, settings, theme } from "herdr";
+import { agents, exec, focused, home, knownAgents, panes, shared, setShared, props, openOverlay, settings, theme } from "herdr";
 
-import { PROVIDERS, sourcesFor, fetchUsage } from "./providers.js";
+import { PROVIDERS, sourcesFor, alwaysSources, fetchUsage } from "./providers.js";
 import { clock, pace, resets, resetsShort } from "./time.js";
 
 const MOD = "omarchy-ai-usage";
@@ -70,11 +70,14 @@ export default class AiUsage extends View {
     const sig = vis.map(v => `${v.terminal}:${v.program.key}`).join(",");
     if (sig === this.sig) return;
     this.sig = sig;
-    if (!vis.length) { if (shownList().length && !shared(SHOWN)?.idle) setShared(SHOWN, { list: shownList(), idle: true }); return; }
     cx.spawn(async () => {
       const seen = new Set(), list = [];
-      for (const v of vis) for (const s of await sourcesFor(v, terminal => this.claudeDirOf(terminal))) if (!seen.has(s.id)) { seen.add(s.id); list.push(s); }
+      const add = s => { if (!seen.has(s.id)) { seen.add(s.id); list.push(s); } };
+      // First the agents with a login here, in a fixed order, so the bar doesn't follow the tab; then whatever else is in view.
+      for (const s of await alwaysSources(await knownAgents().catch(() => []))) add(s);
+      for (const v of vis) for (const s of await sourcesFor(v, terminal => this.claudeDirOf(terminal))) add(s);
       if (this.sig !== sig) return;
+      if (!list.length) { if (shownList().length && !shared(SHOWN)?.idle) setShared(SHOWN, { list: shownList(), idle: true }); return; }
       if (JSON.stringify(shared(SHOWN)) !== JSON.stringify({ list, idle: false })) setShared(SHOWN, { list, idle: false });
       await refreshAll();
     });
