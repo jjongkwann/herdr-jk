@@ -6,7 +6,7 @@
     "ctrl-down": "pane.go:down"
   },
   "layout:omarchy": {
-    "super-ctrl-d": "omarchy-voice.toggle",
+    "super-ctrl-v": "omarchy-voice.toggle",
     "super-ctrl-c": "omarchy-pane.toggle",
     "super-shift-r": "pr-flow.refresh",
     "ctrl-shift-p": "mod.open:omarchy-palette",
