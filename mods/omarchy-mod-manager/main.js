@@ -796,6 +796,7 @@ export default class ModManager extends View {
       .child(v_flex().id("root").role("dialog").accessibility_label("Mod Manager").track_focus(this.handle).w(w).h(h)
         .px(28).pt(22).pb(24).gap(18).bg(p.bg).border_2().border_color(p.bar).text_size(12.5).text_color(p.fg).overflow_hidden()
         .on_key_down((e, cx) => this.onKey(e, cx))
+        .on_mouse_down_out(() => this.dismiss())
         .child(this.header(p))
         .child(this.banner(p) ?? div())
         .child(this[`${this.mode}View`](p))
