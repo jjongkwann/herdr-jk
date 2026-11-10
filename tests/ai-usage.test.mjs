@@ -3,12 +3,12 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { H, DAY } from '../mods/omarchy-ai-usage/time.js';
 
-function usageHarness(files = {}, response = {}, status = 200, settings = {}) {
+function usageHarness(files = {}, response = {}, status = 200, settings = {}, homeDir = '/home/test') {
   const state = new Map();
   const requests = [];
   const dependencies = {
     View: class {},
-    home: () => '/home/test',
+    home: () => homeDir,
     settings: () => settings,
     readTextFile: async path => files[path] === undefined ? null : JSON.stringify(files[path]),
     shared: key => state.get(key),
@@ -48,6 +48,13 @@ test('Claude normalizes session and model limits, ignoring unknown windows', asy
   assert.equal(h.requests[0].url, 'https://api.anthropic.com/api/oauth/usage');
   assert.equal(h.requests[0].headers.Authorization, 'Bearer claude-token');
   assert.ok(!JSON.stringify([...h.state]).includes('claude-token'));
+});
+
+test('Claude reads its login under a Windows home', async () => {
+  const h = usageHarness({ 'C:\\Users\\test/.claude/.credentials.json': { claudeAiOauth: { accessToken: 'claude-token' } } },
+    { limits: [{ kind: 'session', percent: 10, resets_at: 'later' }] }, 200, {}, 'C:\\Users\\test');
+  await h.refreshOne({ ...claude, from: { claude: 'C:\\Users\\test/.claude' } });
+  assert.equal(h.requests[0]?.headers.Authorization, 'Bearer claude-token');
 });
 
 test('Claude also accepts legacy usage windows', async () => {

@@ -1,8 +1,10 @@
 import { home, readTextFile, settings } from "herdr";
 import { H, DAY } from "./time.js";
 
+// A path is absolute when it starts with / or, on Windows, a drive letter (C:\ or C:/).
+const absolute = path => path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
 const json = async path => {
-  try { return JSON.parse((await readTextFile(path.startsWith("/") ? path : `${home()}/${path}`)) ?? "null"); } catch { return null; }
+  try { return JSON.parse((await readTextFile(absolute(path) ? path : `${home()}/${path}`)) ?? "null"); } catch { return null; }
 };
 const isoOf = ms => (ms ? new Date(ms).toISOString() : null);
 const spanName = s => (s >= 7 * DAY ? "Weekly limit" : `${Math.round(s / H)}-hour limit`);
