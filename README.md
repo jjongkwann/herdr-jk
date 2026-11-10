@@ -53,8 +53,10 @@ These keys work only in the Omarchy layout, except Ctrl+arrows, which also apply
 | Key | Action |
 | --- | --- |
 | `alt-1` … `alt-9` | Go to tab 1 to 9 |
+| `super-alt-1` … `super-alt-9` | Go to space 1 to 9 |
 | `alt-left` / `alt-right` | Previous / next tab |
-| `alt-up` / `alt-down` | Previous / next space |
+| `alt-up` / `alt-down` or `super-up` / `super-down` | Previous / next space |
+| `super-shift-up` / `super-shift-down` | Previous / next agent, in the sidebar's order |
 | `ctrl-left` / `ctrl-right` / `ctrl-up` / `ctrl-down` | Move between panes |
 | `alt-enter` / `alt-shift-enter` | Split the pane right / down |
 | `super-return` | New terminal |

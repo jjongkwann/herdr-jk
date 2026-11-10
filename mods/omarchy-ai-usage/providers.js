@@ -22,10 +22,12 @@ export const PROVIDERS = {
       const data = await res.json();
       const span = { session: 5 * H, weekly_all: 7 * DAY, weekly_scoped: 7 * DAY };
       if (Array.isArray(data.limits)) {
-        return data.limits.filter(l => span[l.kind]).map(l => {
+        // 5h, then the model-scoped weekly windows (named by their model alone), then the plan-wide weekly.
+        const order = { session: 0, weekly_scoped: 1, weekly_all: 2 };
+        return data.limits.filter(l => span[l.kind]).sort((x, y) => order[x.kind] - order[y.kind]).map(l => {
           const model = l.scope?.model?.display_name;
           const w = win(span[l.kind], l.percent, l.resets_at);
-          return model ? { ...w, short: `7d ${model}`, long: `Weekly ${model} limit` } : w;
+          return model ? { ...w, short: model, long: `Weekly ${model} limit`, scoped: true } : w;
         });
       }
       return [["five_hour", 5 * H], ["seven_day", 7 * DAY]]

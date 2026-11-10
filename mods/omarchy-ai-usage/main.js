@@ -3,7 +3,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { agents, exec, focused, home, knownAgents, panes, shared, setShared, props, openOverlay, settings, theme } from "herdr";
 
 import { PROVIDERS, sourcesFor, alwaysSources, fetchUsage } from "./providers.js";
-import { clock, pace, resets, resetsShort } from "./time.js";
+import { clock, pace, resets, resetsShort, resetsLeft, DAY } from "./time.js";
 
 const MOD = "omarchy-ai-usage";
 const keyOf = id => `${MOD}.${id}`;
@@ -48,6 +48,8 @@ export default class AiUsage extends View {
     this.sig = null;
     this.claudeEnv = {};
     cx.timer.every(60e3, cx => { cx.spawn(async () => refreshAll()); cx.notify(); });
+    // A start or a reload of this mod fetches at once, so a change shows without waiting for the 5-minute cycle.
+    cx.spawn(async () => refreshAll(true));
   }
 
   // CLAUDE_CONFIG_DIR is per process; Linux /proc ties it to the Herdr terminal (HC_TERMINAL_ID).
@@ -157,12 +159,15 @@ export default class AiUsage extends View {
       const u = shared(keyOf(s.id));
       const stale = idle || isStale(u);
       const [first, second] = u?.windows ?? [];
+      // The plan-wide weekly window also says when it resets (not a model-scoped one).
+      const weekly = [first, second].find(w => w && w.span >= 7 * DAY && !w.monthly && !w.scoped);
       const win = (w) => {
         const c = color(w, stale, t, s);
         return h_flex().gap(5).items_center().flex_none()
           .child(div().whitespace_nowrap().text_color(t.dim).child(w.short))
           .child(div().relative().w(barW).h(6).bg(t.border).child(div().absolute().left(0).top(0).h_full().w(`${clamp(w.used)}%`).bg(c)))
-          .child(div().whitespace_nowrap().text_color(stale ? t.dim : w.used >= 80 ? c : t.muted).child(`${w.used}%`));
+          .child(div().whitespace_nowrap().text_color(stale ? t.dim : w.used >= 80 ? c : t.muted).child(`${w.used}%`))
+          .when(w === weekly && Boolean(resetsLeft(w)), el => el.child(div().whitespace_nowrap().text_color(t.dim).child(`↻ ${resetsLeft(w)}`)));
       };
       return h_flex().gap(6).items_center().flex_none()
         .child(this.icon(s, 12, stale))

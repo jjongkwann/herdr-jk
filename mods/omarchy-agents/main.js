@@ -300,7 +300,9 @@ export default class Agents extends View {
     const place = a => {
       const c = cwdOf.get(a.pane);
       if (!c) return a.space_name;
-      return c === home() ? "~" : c.split("/").filter(Boolean).pop() || a.space_name;
+      // A home folder reads "~", here or on another machine (macOS, Linux or Windows); else the last folder.
+      if (c === home() || /^(\/Users\/[^/]+|\/home\/[^/]+|\/root|[A-Za-z]:\\Users\\[^\\]+)[\\/]?$/.test(c)) return "~";
+      return c.split(/[\\/]/).filter(Boolean).pop() || a.space_name;
     };
     for (const a of list) { const k = `${place(a)}\u0000${detail.get(a.address) ?? ""}`; seen[k] = (seen[k] ?? 0) + 1; }
     for (const a of list) {

@@ -180,7 +180,8 @@ export default class Tabs extends View {
       const personNamed = c.named && shared("tab-titles.set")?.[c.id] !== c.name && !programs.some(p => p.name === c.name);
       // The icons already say which agents run here; the label carries what they work on.
       const isProgram = n => !n || tabPanes.some(p => p.program?.name === n || p.terminal === n) || n === "Claude Code";
-      const folder = lead?.cwd ? (/^\/(home\/[^/]+|root)\/?$/.test(lead.cwd) ? "~" : lead.cwd.split("/").filter(Boolean).pop()) : "";
+      // A home folder reads "~" on any machine (macOS, Linux or Windows); else the last folder.
+      const folder = lead?.cwd ? (lead.cwd === home() || /^(\/Users\/[^/]+|\/home\/[^/]+|\/root|[A-Za-z]:\\Users\\[^\\]+)[\\/]?$/.test(lead.cwd) ? "~" : lead.cwd.split(/[\\/]/).filter(Boolean).pop()) : "";
       const work = [title, folder, lead?.branch].find(n => !isProgram(n)) ?? (isProgram(c.name) ? "" : c.name);
       const name = personNamed && !isProgram(c.name) ? c.name : work;
       const detail = multi

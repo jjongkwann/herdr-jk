@@ -43,7 +43,7 @@ test('Claude normalizes session and model limits, ignoring unknown windows', asy
   await h.refreshOne(claude);
   assert.deepEqual(h.state.get('omarchy-ai-usage.claude.claude').windows, [
     { short: '5h', long: '5-hour limit', span: 5 * 3600e3, used: 42, resets_at: '2026-11-05T01:00:00Z' },
-    { short: '7d Sonnet', long: 'Weekly Sonnet limit', span: 7 * 24 * 3600e3, used: 92, resets_at: '2026-11-08T01:00:00Z' },
+    { short: 'Sonnet', long: 'Weekly Sonnet limit', span: 7 * 24 * 3600e3, used: 92, resets_at: '2026-11-08T01:00:00Z', scoped: true },
   ]);
   assert.equal(h.requests[0].url, 'https://api.anthropic.com/api/oauth/usage');
   assert.equal(h.requests[0].headers.Authorization, 'Bearer claude-token');
@@ -199,4 +199,13 @@ test('logged-in agents show whatever the tab holds, and agy reads its saved quot
   const windows = h.state.get('omarchy-ai-usage.antigravity').windows;
   assert.deepEqual(windows.map(w => [w.short, w.used]), [['5h', 25], ['7d', 0]]);
   assert.equal(h.requests.length, 0);
+});
+
+test('Claude puts its model-scoped weekly window before the plan-wide one', async () => {
+  const h = usageHarness(claudeLogin, { limits: [
+    { kind: 'weekly_all', percent: 41, resets_at: '2026-11-14T01:00:00Z' },
+    { kind: 'weekly_scoped', percent: 30, resets_at: '2026-11-14T01:00:00Z', scope: { model: { display_name: 'Fable' } } },
+  ] });
+  await h.refreshOne(claude);
+  assert.deepEqual(h.state.get('omarchy-ai-usage.claude.claude').windows.map(w => w.short), ['Fable', '7d']);
 });

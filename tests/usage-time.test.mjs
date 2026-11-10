@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { H, DAY, clock, pace, resets, resetsShort } from '../mods/omarchy-ai-usage/time.js';
+import { H, DAY, clock, pace, resets, resetsShort, resetsLeft } from '../mods/omarchy-ai-usage/time.js';
 
 test('usage pace stays within the quota window', t => {
   const now = Date.parse('2030-01-01T12:00:00Z');
@@ -28,4 +28,13 @@ test('times read in 12-hour form', () => {
   assert.equal(clock(at(9, 5)), '9:05 AM');
   assert.equal(clock(at(12, 30)), '12:30 PM');
   assert.equal(clock(at(23, 59)), '11:59 PM');
+});
+
+test('time left reads days and hours past a day', () => {
+  const now = Date.now();
+  assert.equal(resetsLeft({ resets_at: new Date(now + 3 * DAY + 19 * H + 20 * 60e3).toISOString() }), '3d19h');
+  // A reset on a whole minute (resets are rounded to the minute) between 4h59m and 5h away.
+  assert.equal(resetsLeft({ resets_at: new Date(Math.ceil(now / 60e3) * 60e3 + 4 * H + 59 * 60e3).toISOString() }), '4h59m');
+  assert.equal(resetsLeft({ resets_at: new Date(now - H).toISOString() }), '0h0m');
+  assert.equal(resetsLeft({}), '');
 });
