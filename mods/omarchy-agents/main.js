@@ -4,6 +4,8 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, home } from "herdr";
+import { chatAgents, withParked } from "./parked.js";
+import { sweep } from "./sweep.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -86,6 +88,8 @@ export default class Agents extends View {
     if (!this.pendingPins.length) localStorage.removeItem("pins");
     this.migratingPins = new Set();
     cx.timer.every(30000, (cx) => cx.notify());
+    // Agents parked behind a chat whose tab or space closed end, as their pane would have.
+    cx.timer.every(5000, () => sweep());
   }
 
   // Stamps agents whose state changed. Done and idle count as one: looking at a
@@ -227,9 +231,14 @@ export default class Agents extends View {
     if (props()?.sortMenu) return this.sortMenu(t);
     const collapsed = narrow();
     const sort = sortOf();
-    let list = agents();
-    this.listed = new Map(list.map((a) => [a.address, a.status]));
+    // Read the snapshots once: every host read copies the whole list into JS.
     const all = terminals();
+    const allPanes = panes();
+    const allSpaces = spaces();
+    // Agents shown as Chat have no pane of their own, so agents() leaves them out.
+    const parked = chatAgents({ panes: allPanes, terminals: all, spaces: allSpaces, focusedPane: focused()?.pane ?? null, seen: shared("chat.seen") ?? {} });
+    let list = withParked(agents(), parked, allSpaces);
+    this.listed = new Map(list.map((a) => [a.address, a.status]));
     this.migratePins(all);
     const shown = focused()?.agent;
     const now = Date.now();
@@ -280,10 +289,8 @@ export default class Agents extends View {
     // A row reads "space \u00b7 detail": the detail is a tab someone named or the
     // agent's own title, never an automatic tab number unless two rows would
     // otherwise read the same.
-    // Read the pane snapshot once: every host read copies the whole list into JS.
-    const allPanes = panes();
     const leads = leadPanes(allPanes);
-    const tabLabels = new Map(spaces().flatMap(s => s.tabs).map(tab => [tab.id, title(tab, leads.get(tab.id))]));
+    const tabLabels = new Map(allSpaces.flatMap(s => s.tabs).map(tab => [tab.id, title(tab, leads.get(tab.id))]));
     const labels = new Map(list.map(a => [a.address, tabLabels.get(a.tab) ?? (a.title || a.program?.name || "")]));
     const label = (a) => labels.get(a.address);
     // The icon already names the program, so a detail that is only "Claude Code" or "Codex" says nothing.
@@ -297,6 +304,8 @@ export default class Agents extends View {
     const seen = {};
     // Where the agent is now (its pane's live folder), not where its space was started.
     const cwdOf = new Map(allPanes.map(p => [p.pane, p.cwd]));
+    // A chat pane has no folder of its own: its parked agent's.
+    for (const a of parked) cwdOf.set(a.pane, a.cwd);
     const place = a => {
       const c = cwdOf.get(a.pane);
       if (!c) return a.space_name;
