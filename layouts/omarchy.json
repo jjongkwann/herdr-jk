@@ -56,6 +56,16 @@
           }
         },
         {
+          "id": "browser-cmd",
+          "type": "block",
+          "size": {
+            "px": 0
+          },
+          "content": {
+            "mod": "omarchy-browser"
+          }
+        },
+        {
           "id": "bar-right",
           "type": "block",
           "size": {
@@ -246,6 +256,167 @@
                           "type": "block",
                           "content": {
                             "mod": "omarchy-notes"
+                          }
+                        },
+                        {
+                          "id": "review",
+                          "type": "block",
+                          "content": {
+                            "mod": "reviewer",
+                            "props": {
+                              "palette": "theme"
+                            }
+                          }
+                        },
+                        {
+                          "id": "tasks",
+                          "type": "stack",
+                          "active": "tasks-list",
+                          "children": [
+                            {
+                              "id": "tasks-list",
+                              "type": "block",
+                              "content": {
+                                "mod": "tasks"
+                              }
+                            },
+                            {
+                              "id": "tasks-thread",
+                              "type": "column",
+                              "resizable": false,
+                              "children": [
+                                {
+                                  "id": "tasks-thread-head",
+                                  "type": "block",
+                                  "size": {
+                                    "px": 127
+                                  },
+                                  "content": {
+                                    "mod": "chat",
+                                    "props": {
+                                      "panel": true,
+                                      "head": true
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "tasks-thread-body",
+                                  "type": "stack",
+                                  "active": "tasks-thread-chat",
+                                  "children": [
+                                    {
+                                      "id": "tasks-thread-chat",
+                                      "type": "block",
+                                      "content": {
+                                        "mod": "chat",
+                                        "props": {
+                                          "panel": true
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "id": "tasks-thread-term",
+                                      "type": "block",
+                                      "content": {
+                                        "agent": "focused"
+                                      }
+                                    },
+                                    {
+                                      "id": "tasks-thread-files",
+                                      "type": "block",
+                                      "content": {
+                                        "mod": "task-files"
+                                      }
+                                    },
+                                    {
+                                      "id": "tasks-thread-changes",
+                                      "type": "block",
+                                      "content": {
+                                        "mod": "task-changes"
+                                      }
+                                    },
+                                    {
+                                      "id": "tasks-thread-pr",
+                                      "type": "block",
+                                      "content": {
+                                        "mod": "task-pr"
+                                      }
+                                    },
+                                    {
+                                      "id": "tasks-thread-browser",
+                                      "type": "column",
+                                      "children": [
+                                        {
+                                          "id": "tasks-thread-browser-host",
+                                          "type": "block",
+                                          "content": {
+                                            "mod": "task-browser"
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "id": "artifacts",
+                          "type": "stack",
+                          "active": "artifacts-list",
+                          "children": [
+                            {
+                              "id": "artifacts-list",
+                              "type": "block",
+                              "content": {
+                                "mod": "artifacts"
+                              }
+                            },
+                            {
+                              "id": "artifacts-view",
+                              "type": "column",
+                              "resizable": false,
+                              "children": [
+                                {
+                                  "id": "artifacts-view-head",
+                                  "type": "block",
+                                  "size": {
+                                    "px": 42
+                                  },
+                                  "content": {
+                                    "mod": "artifacts",
+                                    "props": {
+                                      "head": true
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "artifacts-view-body",
+                                  "type": "block",
+                                  "content": {
+                                    "mod": "artifacts"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "id": "prs",
+                          "type": "block",
+                          "content": {
+                            "mod": "pr-flow"
+                          }
+                        },
+                        {
+                          "id": "herdr-sim",
+                          "type": "block",
+                          "content": {
+                            "mod": "herdr-sim",
+                            "props": {
+                              "frames": "panel"
+                            }
                           }
                         }
                       ],

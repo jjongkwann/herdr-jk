@@ -18,6 +18,9 @@ function find(node, id) {
   return null;
 }
 
+// The panel-body child each optional button opens, and the mod (installed on its own) it needs.
+const NEEDS = { review: "reviewer", tasks: "tasks", artifacts: "artifacts", prs: "pr-flow", "herdr-sim": "herdr-sim" };
+
 export default class Tabs extends View {
   init(_props, cx) {
     this.hovered = false;
@@ -32,8 +35,11 @@ export default class Tabs extends View {
       this.source = await readTextFile(`${appHome()}/mods/omarchy-tabs/reopen.py`).catch(() => null);
       this.refresh(cx);
     });
+    // Panels that need a mod installed separately: their button shows only while that mod is there.
+    this.mods = {};
+    this.probeMods(cx);
     // Poll gently for pure resizes; tab, pane and status changes refresh immediately.
-    cx.timer.every(10000, cx => this.refresh(cx));
+    cx.timer.every(10000, cx => { this.refresh(cx); this.probeMods(cx); });
     // Each step touches cx, so a reloaded strip's old loop ends instead of eating the key.
     cx.spawn(async (cx) => {
       for (;;) {
@@ -64,6 +70,15 @@ export default class Tabs extends View {
     if (sig === this.sig) return;
     this.sig = sig;
     this.refresh(cx);
+  }
+
+  probeMods(cx) {
+    cx.spawn(async (cx) => {
+      const found = {};
+      for (const m of new Set([...Object.values(NEEDS), "omarchy-browser"]))
+        found[m] = await readTextFile(`${appHome()}/mods/${m}/mod.json`).then(Boolean, () => false);
+      if (JSON.stringify(found) !== JSON.stringify(this.mods)) { this.mods = found; cx.notify(); }
+    });
   }
 
   refresh(cx) {
@@ -213,8 +228,9 @@ export default class Tabs extends View {
     const root = layout();
     const panel = find(root, "panel"), body = find(root, "panel-body");
     const enabled = panel && body
-      ? [...(shared("workspace.panels") ?? ["files", "changes"]), "graph"].filter(id => Boolean(find(body, id)))
-        .filter(id => id !== "changes" || space?.branch != null)
+      ? [...(shared("workspace.panels") ?? ["files", "changes"]), "graph", "review", "prs", "herdr-sim", "tasks", "artifacts"].filter(id => Boolean(find(body, id)))
+        .filter(id => !NEEDS[id] || this.mods?.[NEEDS[id]])
+        .filter(id => (id !== "changes" && id !== "review") || space?.branch != null)
       : [];
     this.syncPanel(space, panel, body, enabled);
     const panelButton = (id, label, icon) => {
@@ -239,6 +255,14 @@ export default class Tabs extends View {
       .child(h_flex().h_full().gap(0).items_center().flex_none()
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
-      .when(enabled.includes("graph"), el => el.child(panelButton("graph", "Graph", "mods/omarchy-tabs/icons/graph.svg"))));
+      .when(enabled.includes("graph"), el => el.child(panelButton("graph", "Graph", "mods/omarchy-tabs/icons/graph.svg")))
+      .when(enabled.includes("review"), el => el.child(panelButton("review", "Review", "mods/reviewer/comment.svg")))
+      .when(enabled.includes("prs"), el => el.child(panelButton("prs", "PRs", "mods/pr-flow/merge.svg")))
+      .when(enabled.includes("herdr-sim"), el => el.child(panelButton("herdr-sim", "Simulator", "mods/herdr-sim/icons/smartphone.svg")))
+      .when(Boolean(this.mods?.["omarchy-browser"]), el => el.child(h_flex().id("open-browser").h_full().px(12).gap(6).flex_none().items_center().rounded(0).border_l(1).border_color(t.border)
+        .text_size(12).bg(idle).text_color(t.muted).hover(s => s.bg(hov)).on_mouse_down("left", stop)
+        .on_click(() => run("omarchy-browser.open")).child(svg("mods/omarchy-tabs/icons/globe.svg").size(14)).child("Browser")))
+      .when(enabled.includes("tasks"), el => el.child(panelButton("tasks", "Tasks", "mods/tasks/tasks.svg")))
+      .when(enabled.includes("artifacts"), el => el.child(panelButton("artifacts", "Artifacts", "mods/artifacts/artifacts.svg"))));
   }
 }
