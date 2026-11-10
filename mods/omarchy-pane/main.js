@@ -41,6 +41,12 @@ function findNode(node, id) {
   return findNode(node.root, id);
 }
 
+// The pane frame may be rounded in the layout: the header's top corners follow, inside its border.
+function headRadius() {
+  const pane = findNode(layout(), "main")?.content?.pane;
+  return Math.max(0, (pane?.radius ?? 0) - (pane?.border?.width ?? 0));
+}
+
 // The system's browser: Windows has no `open`, and Linux distros like Arch only ship `xdg-open`.
 function openOutside(url) {
   if (/^[a-z]:[\\/]/i.test(home())) exec("explorer", [url]);
@@ -203,6 +209,7 @@ export default class Pane extends View {
       .gap(4)
       .items_center()
       .bg(t.surface)
+      .rounded_t(headRadius())
       .border_b(1)
       .border_color(t.border)
       .text_size(12)
@@ -292,6 +299,7 @@ export default class Pane extends View {
       .gap(8)
       .items_center()
       .bg(t.background)
+      .rounded_t(headRadius())
       .border_b(1)
       .border_color(t.border)
       .text_size(12)
