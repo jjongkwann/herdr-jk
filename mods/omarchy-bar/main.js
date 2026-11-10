@@ -37,7 +37,10 @@ export default class OmarchyBar extends View {
     // Each step touches cx, so a reloaded bar's old loop ends instead of eating the key.
     cx.spawn(async (cx) => {
       for (;;) {
-        if ((await nextCommand()) === "next-wallpaper") await nextWallpaper();
+        const command = await nextCommand();
+        if (command === "next-wallpaper") await nextWallpaper();
+        // macOS full screen (its own desktop), as ⌃⌘F in apps with a View menu.
+        if (command === "fullscreen") globalThis.window.toggle_fullscreen();
         cx.notify();
       }
     });

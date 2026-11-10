@@ -14,6 +14,7 @@
     "ctrl-shift-m": "mod.open:omarchy-mod-manager",
     "super-ctrl-space": "omarchy-bar.next-wallpaper",
     "super-ctrl-w": "omarchy-bar.next-wallpaper",
+    "super-ctrl-f": "omarchy-bar.fullscreen",
     "super-ctrl-shift-space": "mod.open:omarchy-themes",
     "super-ctrl-t": "mod.open:omarchy-themes",
     "super-ctrl-b": "mod.open:omarchy-backgrounds",
