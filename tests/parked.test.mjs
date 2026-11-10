@@ -70,6 +70,7 @@ test("parked agents sit in space and tab order among agents()", () => {
 
 test("omarchy-agents and omarchy-spaces carry the same parked.js", () => {
   assert.equal(readFileSync("mods/omarchy-spaces/parked.js", "utf8"), readFileSync("mods/omarchy-agents/parked.js", "utf8"));
+  assert.equal(readFileSync("mods/omarchy-tabs/parked.js", "utf8"), readFileSync("mods/omarchy-agents/parked.js", "utf8"));
 });
 
 test("labels hold the chat pane's id local to the terminal's machine", async () => {

@@ -1,12 +1,12 @@
 // Agents parked behind a chat pane (omarchy-pane's Chat | Terminal switch, or Shepherdr's
 // pane-chat), known by their core label herdr.chat=<chat pane>. Herdr lists an agent through
 // its pane, so an agent whose terminal is parked while its chat shows drops out of agents()
-// and out of tab and space status. The agents list and the spaces list add these back, as the
-// chat pane's agent. Adapted from Shepherdr's lib/parked.js
+// and out of tab and space status. The agents list, the spaces list and the tab strip add these
+// back, as the chat pane's agent. Adapted from Shepherdr's lib/parked.js
 // (https://github.com/eliasstravik/shepherdr, MIT, Copyright (c) 2026 Elias Stravik; the license
 // text is in omarchy-pane/NOTICE).
 //
-// The same file is in omarchy-agents and omarchy-spaces (each mod installs on its own);
+// The same file is in omarchy-agents, omarchy-spaces and omarchy-tabs (each mod installs on its own);
 // tests/parked.test.mjs checks the copies match. It takes Herdr's live lists as arguments,
 // so a render reads each list once.
 
