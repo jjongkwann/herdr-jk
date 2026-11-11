@@ -206,13 +206,48 @@ export default class Agents extends View {
       .text_size(12.5)
       .when(on, (el) => el.bg(t.foreground + "2e"))
       .hover((s) => s.bg(t.foreground + "14"))
+      .on_hover((over, cx) => {
+        if (over) this.hovered = k.address;
+        else if (this.hovered === k.address) this.hovered = null;
+        cx.notify();
+      })
       .on_click(() => this.peek(k.address))
       .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
         .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(0))))
       .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
       .child(div().flex_1().truncate().text_color(on ? t.foreground : t.muted).child(k.name || k.template || k.program?.name || k.address))
+      .when(this.hovered === k.address || this.arming === k.address, (el) => el.child(this.closer(t, k.address, st)))
       .child(this.status(t, { status: st }, compact));
+  }
+
+  // Stops the agent. One that is working or needs you takes a second click within 3s.
+  closer(t, address, status) {
+    const armed = this.arming === address;
+    return div()
+      .id(`kill-${address}`)
+      .flex_none()
+      .p(2)
+      .rounded(0)
+      .text_color(armed ? t.blocked : t.dim)
+      .when(armed, (el) => el.bg(t.blocked + "26"))
+      .cursor_pointer()
+      .hover((s) => s.bg(t.foreground + "14").text_color(armed ? t.blocked : t.foreground))
+      .tooltip(armed ? "Click again to stop it" : "Stop agent")
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        if ((status === "working" || status === "blocked") && !armed) {
+          this.arming = address;
+          cx.timer.after(3000, (cx) => { if (this.arming === address) this.arming = null; cx.notify(); });
+        } else {
+          this.arming = null;
+          this.hovered = null;
+          run("terminal.kill", { terminal: address });
+        }
+        cx.notify();
+      })
+      .child(svg("mods/omarchy-chrome/x.svg").size(13));
   }
 
   // compact: a ! for blocked where a header already says "Needs you".
@@ -409,6 +444,7 @@ export default class Agents extends View {
         .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
         .when(subs.length > 0, el => el.child(fold(a, subs)))
         .when(this.hovered === a.address, el => el.child(pin))
+        .when(this.hovered === a.address || this.arming === a.address, el => el.child(this.closer(t, a.address, a.status)))
         .when(this.hovered !== a.address && Boolean(when) && !squeezed, el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
         .child(this.status(t, a, byPriority && !isPinned));
     };
