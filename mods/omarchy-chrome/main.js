@@ -16,11 +16,12 @@ const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
 
 // To the rail (on macOS wide enough for the traffic lights), or back to the width it had.
 function toggleSidebar() {
-  const width = find(layout(), "sidebar")?.size?.px;
-  if (!narrow()) setShared("sidebar.width", width);
+  const width = find(layout(), "sidebar")?.size?.px, expanding = narrow();
+  if (!expanding) setShared("sidebar.width", width);
   // Mods edited before the rail went by width still read the flag.
-  setShared("sidebar.collapsed", !narrow());
-  run("layout.resize", { id: "sidebar", px: narrow() ? (shared("sidebar.width") ?? 268) : window()?.platform === "macos" ? 76 : 44 });
+  setShared("sidebar.collapsed", !expanding);
+  run("layout.resize", { id: "sidebar", px: expanding ? (shared("sidebar.width") ?? 268) : window()?.platform === "macos" ? 76 : 44 });
+  run("layout.resize", { id: "sidebar-footer", px: expanding ? 84 : 136 });
 }
 
 export default class WorkspaceChrome extends View {
@@ -39,6 +40,7 @@ export default class WorkspaceChrome extends View {
       if (find(layout(), "sidebar")?.size?.px !== width) return this.snap(cx);
       setShared("sidebar.collapsed", width < 100);
       run("layout.resize", { id: "sidebar", px: width < 100 ? rail : 160 });
+      run("layout.resize", { id: "sidebar-footer", px: width < 100 ? 136 : 84 });
     });
   }
   render(cx) {
@@ -51,12 +53,16 @@ export default class WorkspaceChrome extends View {
         .text_color(dim ? t.dim : t.muted).hover(s => s.bg(t.foreground + "14").border_color(t.foreground + "40").text_color(t.foreground)).cursor_pointer()
         .on_click(action).child(svg(`mods/omarchy-chrome/${icon}.svg`).size(14))
         .when(!collapsed, el => el.child(label));
-      return v_flex().size_full().justify_center().bg(t.chrome).px(collapsed ? 0 : 10).py(collapsed ? 4 : 10).gap(2).when(collapsed, el => el.items_center()).text_size(12)
-        .child(row("settings", "settings", "Settings", false, () => run("mod.open", { name: "omarchy-settings" }))
-          .when(Boolean(updates().app.ready), el => el.child(div().size(6).rounded(0).bg(t.accent).when(collapsed, d => d.absolute().top(2).right(2)))))
-        .child(row("keys", "keyboard", "Keybindings", false, () => run("mod.open", { name: "omarchy-keys" })))
-        .child(row("mods", "layers", "Mods", false, () => run("mod.open", { name: "omarchy-mod-manager" })))
-        .child(row("machine", "plus", "Add machine", true, () => run("mod.open", { name: "machine-add" })));
+      const settings = row("settings", "settings", "Settings", false, () => run("mod.open", { name: "omarchy-settings" }))
+        .when(Boolean(updates().app.ready), el => el.child(div().size(6).rounded(0).bg(t.accent).when(collapsed, d => d.absolute().top(2).right(2))));
+      const keys = row("keys", "keyboard", "Keybindings", false, () => run("mod.open", { name: "omarchy-keys" }));
+      const mods = row("mods", "layers", "Mods", false, () => run("mod.open", { name: "omarchy-mod-manager" }));
+      const machine = row("machine", "plus", "Add machine", true, () => run("mod.open", { name: "machine-add" }));
+      const base = v_flex().size_full().justify_center().bg(t.chrome).px(collapsed ? 0 : 10).py(collapsed ? 4 : 10).gap(2).text_size(12);
+      if (collapsed) return base.items_center().child(settings).child(keys).child(mods).child(machine);
+      return base
+        .child(h_flex().gap(2).child(settings.flex_auto().min_w(0).overflow_hidden()).child(keys.flex_auto().min_w(0).overflow_hidden()).child(mods.flex_auto().min_w(0).overflow_hidden()))
+        .child(machine);
     }
     return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 14).pr(10).gap(4).items_center().text_size(12)
       .when(window()?.platform === "macos" && !window()?.fullscreen && !collapsed, el => el.pl(76))
