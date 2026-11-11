@@ -1,9 +1,10 @@
-// Every key binding Herdr has (keys()), grouped by where it works.
+// Every key binding Herdr has (keys()), grouped by where it works, then by type.
 // Type to filter by key or action; Esc closes.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { keys, theme, shared, props, closeOverlay } from "herdr";
+import { GROUPS, describe, fold } from "./describe.js";
 
 // The shown layout's own keys win over global ones, so they come first.
 function title(section, layout) {
@@ -28,21 +29,29 @@ export default class OmarchyKeys extends View {
 
   render() {
     const t = theme(), layout = shared("layout"), q = this.query;
-    const all = keys().filter((k) => !q || k.keys.toLowerCase().includes(q) || k.action.toLowerCase().includes(q));
+    const all = keys().map((k) => ({ ...k, ...describe(k.action) }))
+      .filter((k) => !q || [k.keys, k.action, k.label, k.group].some((v) => v.toLowerCase().includes(q)));
     const own = new Set(all.filter((k) => k.section === `layout:${layout}`).map((k) => k.keys));
     const sections = [...new Set(all.map((k) => k.section))]
       .sort((a, b) => (a === `layout:${layout}` ? -1 : b === `layout:${layout}` ? 1 : 0));
     const mine = `layout:${layout}`;
     const chip = (p, on) => div().px(5).border_1().border_color(on ? t.accent : t.border).bg(on ? t.accent + "1f" : t.raised).text_size(11)
       .text_color(on ? t.accent : t.foreground).child(p);
-    const rows = (section) => all.filter((k) => k.section === section).map((k, i) => {
+    const row = (section, k) => {
       // A global key this layout binds too does the layout's action here.
-      const shadowed = section === "global" && own.has(k.keys), on = section === mine;
-      return h_flex().id(`k-${section}-${i}`).h(28).flex_none().px(10).gap(12).items_center().hover((s) => s.bg(t.hover))
+      const shadowed = section === "global" && (own.has(k.keys) || (k.run && own.has(`${k.keyBase}${k.from}`))), on = section === mine;
+      return h_flex().id(`k-${section}-${k.keys}`).h(28).flex_none().px(10).gap(12).items_center().hover((s) => s.bg(t.hover))
         .child(h_flex().w(200).flex_none().gap(3).children(keyParts(k.keys).map((p) => chip(p, on))))
-        .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(on ? t.foreground : shadowed ? t.dim : t.muted).child(k.action))
-        .when(shadowed, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child("overridden here")));
-    });
+        .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(on ? t.foreground : shadowed ? t.dim : t.muted).child(describe(k.action).label))
+        .child(div().flex_none().max_w(200).truncate().text_size(11).text_color(t.dim).child(shadowed ? "overridden here" : k.action));
+    };
+    const rows = (section) => {
+      const list = all.filter((k) => k.section === section);
+      return GROUPS.flatMap((g) => {
+        const group = fold(list.filter((k) => k.group === g));
+        return group.length ? [div().id(`kg-${section}-${g}`).h(22).flex_none().px(10).flex().items_end().pb(2).text_size(10.5).text_color(t.dim).child(g), ...group.map((k) => row(section, k))] : [];
+      });
+    };
     const head = (section) => div().id(`ks-${section}`).h(28).flex_none().px(10).flex().items_end().pb(4).text_size(11).font_semibold()
       .text_color(t.dim).child(title(section, layout).toUpperCase());
     // The keys that came with this layout stand apart: an accent block with its own heading.
