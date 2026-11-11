@@ -3,13 +3,14 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { H, DAY } from '../mods/omarchy-ai-usage/time.js';
 
-function usageHarness(files = {}, response = {}, status = 200, settings = {}, homeDir = '/home/test') {
+function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/test') {
   const state = new Map();
   const requests = [];
   const dependencies = {
     View: class {},
     home: () => homeDir,
-    settings: () => settings,
+    appHome: () => `${homeDir}/.config/herdr-app`,
+    settings: () => ({}),
     readTextFile: async path => files[path] === undefined ? null : JSON.stringify(files[path]),
     shared: key => state.get(key),
     setShared: (key, value) => state.set(key, value),
@@ -52,7 +53,7 @@ test('Claude normalizes session and model limits, ignoring unknown windows', asy
 
 test('Claude reads its login under a Windows home', async () => {
   const h = usageHarness({ 'C:\\Users\\test/.claude/.credentials.json': { claudeAiOauth: { accessToken: 'claude-token' } } },
-    { limits: [{ kind: 'session', percent: 10, resets_at: 'later' }] }, 200, {}, 'C:\\Users\\test');
+    { limits: [{ kind: 'session', percent: 10, resets_at: 'later' }] }, 200, 'C:\\Users\\test');
   await h.refreshOne({ ...claude, from: { claude: 'C:\\Users\\test/.claude' } });
   assert.equal(h.requests[0]?.headers.Authorization, 'Bearer claude-token');
 });
@@ -183,8 +184,10 @@ test('a Claude profile is named after its organization, Personal, or its folder'
 });
 
 test('settings.json claude_labels names a Claude profile outright', async () => {
-  const { route } = usageHarness({ '/home/test/.claude.json': { oauthAccount: { organizationName: 'Flexspring' } } },
-    {}, 200, { claude_labels: { '~/.claude': 'Work' } });
+  const { route } = usageHarness({
+    '/home/test/.claude.json': { oauthAccount: { organizationName: 'Flexspring' } },
+    '/home/test/.config/herdr-app/settings.json': { claude_labels: { '~/.claude': 'Work' } },
+  });
   assert.equal((await route(agent('claude'), '/home/test/.claude'))[0].label, 'Work');
   assert.equal((await route(agent('claude'), '/home/test/.claude-other'))[0].label, 'Other');
 });
