@@ -48,11 +48,11 @@ export default class WorkspaceChrome extends View {
     const collapsed = narrow();
     if (props()?.footer) {
       this.snap(cx);
-      const row = (id, icon, label, dim, action) => h_flex().id(id).h(26).px(8).gap(9).items_center()
+      const row = (id, icon, label, dim, action) => h_flex().id(id).h(26).px(6).gap(6).items_center()
         .when(collapsed, el => el.size(30).px(0).justify_center().relative().tooltip(label)).rounded(0).border(1).border_color(t.foreground + "00")
         .text_color(dim ? t.dim : t.muted).hover(s => s.bg(t.foreground + "14").border_color(t.foreground + "40").text_color(t.foreground)).cursor_pointer()
-        .on_click(action).child(svg(`mods/omarchy-chrome/${icon}.svg`).size(14))
-        .when(!collapsed, el => el.child(label));
+        .on_click(action).child(svg(`mods/omarchy-chrome/${icon}.svg`).size(14).flex_none())
+        .when(!collapsed, el => el.child(div().min_w(0).truncate().child(label)));
       const settings = row("settings", "settings", "Settings", false, () => run("mod.open", { name: "omarchy-settings" }))
         .when(Boolean(updates().app.ready), el => el.child(div().size(6).rounded(0).bg(t.accent).when(collapsed, d => d.absolute().top(2).right(2))));
       const keys = row("keys", "keyboard", "Keybindings", false, () => run("mod.open", { name: "omarchy-keys" }));
@@ -60,9 +60,8 @@ export default class WorkspaceChrome extends View {
       const machine = row("machine", "plus", "Add machine", true, () => run("mod.open", { name: "machine-add" }));
       const base = v_flex().size_full().justify_center().bg(t.chrome).px(collapsed ? 0 : 10).py(collapsed ? 4 : 10).gap(2).text_size(12);
       if (collapsed) return base.items_center().child(settings).child(keys).child(mods).child(machine);
-      return base
-        .child(h_flex().gap(2).child(settings.flex_auto().min_w(0).overflow_hidden()).child(keys.flex_auto().min_w(0).overflow_hidden()).child(mods.flex_auto().min_w(0).overflow_hidden()))
-        .child(machine);
+      const pair = (a, b) => h_flex().gap(2).child(a.flex_1().min_w(0).overflow_hidden()).child(b.flex_1().min_w(0).overflow_hidden());
+      return base.child(pair(settings, keys)).child(pair(mods, machine));
     }
     return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 14).pr(10).gap(4).items_center().text_size(12)
       .when(window()?.platform === "macos" && !window()?.fullscreen && !collapsed, el => el.pl(76))
