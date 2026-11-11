@@ -230,6 +230,7 @@ export default class Agents extends View {
     const t = theme();
     if (props()?.sortMenu) return this.sortMenu(t);
     const collapsed = narrow();
+    const squeezed = (find(layout(), "sidebar")?.size?.px ?? 243) < 230;
     const sort = sortOf();
     // Read the snapshots once: every host read copies the whole list into JS.
     const all = terminals();
@@ -379,14 +380,14 @@ export default class Agents extends View {
       return h_flex()
         .id(`ag-${a.address}`)
         .relative()
-        .px(8)
+        .px(squeezed ? 6 : 8)
         .h(26)
         .flex_none()
         .rounded(0)
         .border(1)
         .border_color(t.foreground + "00")
         .items_center()
-        .gap(8)
+        .gap(squeezed ? 5 : 8)
         .when(a.focused, (el) => el.bg(t.foreground + "2e").child(div().absolute().left(-1).top(-1).bottom(-1).w(2).bg(t.accent)))
         .cursor_pointer()
         .when(!a.focused, (el) => el.hover((s) => s.bg(t.foreground + "14").border_color(t.foreground + "40")))
@@ -403,12 +404,12 @@ export default class Agents extends View {
             cx.notify();
           })).child(pic)))
         .child(h_flex().flex_1().min_w(0).gap(5).items_center()
-          .child(div().min_w(0).flex_shrink(0).max_w(room() * 7).truncate().text_color(idle ? t.muted : t.foreground).child(name))
+          .child(div().min_w(0).truncate().text_color(idle ? t.muted : t.foreground).child(name))
           .when(fitsMore, el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${also}`))))
         .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
         .when(subs.length > 0, el => el.child(fold(a, subs)))
         .when(this.hovered === a.address, el => el.child(pin))
-        .when(this.hovered !== a.address && Boolean(when), el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
+        .when(this.hovered !== a.address && Boolean(when) && !squeezed, el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
         .child(this.status(t, a, byPriority && !isPinned));
     };
 
