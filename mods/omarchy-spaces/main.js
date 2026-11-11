@@ -391,7 +391,7 @@ export default class Spaces extends View {
         } else {
           this.arming = null;
           this.hovered = null;
-          run("space.close", { id: w.id });
+          run("space.close", { id: w.id, confirmed: armed });
         }
         cx.notify();
       })
