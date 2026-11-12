@@ -200,6 +200,14 @@
                       },
                       "edge": "bottom",
                       "align": "center"
+                    },
+                    {
+                      "id": "voice-anchor",
+                      "content": {
+                        "mod": "omarchy-voice-live"
+                      },
+                      "edge": "top",
+                      "align": "center"
                     }
                   ],
                   "type": "block",
