@@ -34,6 +34,6 @@ export function openDialog(action, ctx) {
 
 export function showChanges() {
   run("layout.select", { stack: "panel-body", child: "changes" });
-  run("layout.select", { stack: "changes", child: "changes-view" });
+  run("layout.select", { stack: "git", child: "changes-view" });
   run("layout.show", { id: "panel" });
 }

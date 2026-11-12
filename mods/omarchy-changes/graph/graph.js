@@ -619,11 +619,7 @@ export class Graph {
     // drops the same rows down over the graph to switch to another.
     const repo = ws && this.opened ? ws.repos.find((r) => r.path === this.opened) : null;
     const settingsShown = this.state === "workspace" || (this.state === "norepo" && !this.skipped);
-    // Inside the Changes panel (props.back: its view's id), a way back to it.
-    const back = props()?.back;
     return h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-      .when(Boolean(back), (e) => e.child(div().id("graph-to-changes").flex_none().cursor_pointer().text_size(11).text_color(t.muted)
-        .hover((s) => s.text_color(t.foreground)).on_click(() => run("layout.select", { stack: "changes", child: back })).child("← CHANGES")))
       .when(!repo && Boolean(ws), (e) => e.child(div().text_size(11).text_color(t.muted).child("MANYGIT")))
       .when(Boolean(repo), (e) => e
         .child(h_flex().id("graph-back").h(24).pl(2).pr(6).gap(3).flex_none().items_center().rounded(0).cursor_pointer()

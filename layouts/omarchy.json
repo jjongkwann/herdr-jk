@@ -235,29 +235,62 @@
                         },
                         {
                           "id": "changes",
-                          "type": "stack",
-                          "active": "changes-view",
+                          "type": "column",
+                          "resizable": false,
                           "children": [
                             {
-                              "id": "changes-view",
+                              "id": "git-switch",
                               "type": "block",
+                              "size": {
+                                "px": 42
+                              },
                               "content": {
                                 "mod": "omarchy-changes",
                                 "props": {
-                                  "graph": "git-graph"
+                                  "view": "switch"
                                 }
                               }
                             },
                             {
-                              "id": "git-graph",
-                              "type": "block",
-                              "content": {
-                                "mod": "omarchy-changes",
-                                "props": {
-                                  "view": "graph",
-                                  "back": "changes-view"
+                              "id": "git",
+                              "type": "stack",
+                              "active": "changes-view",
+                              "children": [
+                                {
+                                  "id": "changes-view",
+                                  "type": "block",
+                                  "content": {
+                                    "mod": "omarchy-changes"
+                                  }
+                                },
+                                {
+                                  "id": "git-graph",
+                                  "type": "block",
+                                  "content": {
+                                    "mod": "omarchy-changes",
+                                    "props": {
+                                      "view": "graph"
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "review",
+                                  "type": "block",
+                                  "content": {
+                                    "mod": "reviewer",
+                                    "props": {
+                                      "palette": "theme"
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "prs",
+                                  "type": "block",
+                                  "content": {
+                                    "mod": "pr-flow"
+                                  }
                                 }
-                              }
+                              ]
                             }
                           ]
                         },
@@ -266,16 +299,6 @@
                           "type": "block",
                           "content": {
                             "mod": "omarchy-notes"
-                          }
-                        },
-                        {
-                          "id": "review",
-                          "type": "block",
-                          "content": {
-                            "mod": "reviewer",
-                            "props": {
-                              "palette": "theme"
-                            }
                           }
                         },
                         {
@@ -411,13 +434,6 @@
                               ]
                             }
                           ]
-                        },
-                        {
-                          "id": "prs",
-                          "type": "block",
-                          "content": {
-                            "mod": "pr-flow"
-                          }
                         },
                         {
                           "id": "herdr-sim",

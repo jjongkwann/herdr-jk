@@ -20,7 +20,7 @@ function find(node, id) {
 }
 
 // The panel-body child each optional button opens, and the mod (installed on its own) it needs.
-const NEEDS = { review: "reviewer", tasks: "tasks", artifacts: "artifacts", prs: "pr-flow", "herdr-sim": "herdr-sim" };
+const NEEDS = { tasks: "tasks", artifacts: "artifacts", "herdr-sim": "herdr-sim" };
 
 export default class Tabs extends View {
   init(_props, cx) {
@@ -236,9 +236,9 @@ export default class Tabs extends View {
     const activeTab = shown.find(c => c.active)?.id;
     const git = space?.branch != null || allPanes.some(p => p.tab === activeTab && p.branch != null);
     const enabled = panel && body
-      ? [...(shared("workspace.panels") ?? ["files", "changes"]), "review", "prs", "herdr-sim", "tasks", "artifacts"].filter(id => Boolean(find(body, id)))
+      ? [...(shared("workspace.panels") ?? ["files", "changes"]), "herdr-sim", "tasks", "artifacts"].filter(id => Boolean(find(body, id)))
         .filter(id => !NEEDS[id] || this.mods?.[NEEDS[id]])
-        .filter(id => (id !== "changes" && id !== "review") || git)
+        .filter(id => id !== "changes" || git)
       : [];
     this.syncPanel(space, panel, body, enabled);
     const panelButton = (id, label, icon) => {
@@ -265,9 +265,7 @@ export default class Tabs extends View {
       .child(div().flex_1())
       .child(h_flex().h_full().gap(0).items_center().flex_none()
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
-      .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
-      .when(enabled.includes("review"), el => el.child(panelButton("review", "Review", "mods/reviewer/comment.svg")))
-      .when(enabled.includes("prs"), el => el.child(panelButton("prs", "PRs", "mods/pr-flow/merge.svg")))
+      .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Git", "mods/changes/changes.svg")))
       .when(enabled.includes("herdr-sim"), el => el.child(panelButton("herdr-sim", "Simulator", "mods/herdr-sim/icons/smartphone.svg")))
       .when(Boolean(this.mods?.["omarchy-browser"]), el => el.child(h_flex().id("open-browser").h_full().px(12).gap(6).flex_none().items_center().rounded(0).border_l(1).border_color(t.border)
         .text_size(12).bg(idle).text_color(t.muted).hover(s => s.bg(hov)).on_mouse_down("left", stop)

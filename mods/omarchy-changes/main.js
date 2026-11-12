@@ -1,6 +1,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { fileAppearance, gitStatus, statusColor } from "./appearance.js";
 import GitGraph from "./graph/main.js";
+import { renderSwitch } from "./switch.js";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, props, run, shared, setShared } from "herdr";
 
@@ -32,8 +33,10 @@ function diffRows(lines) {
 
 export default class Changes extends View {
   init(_props, cx) {
-    // One mod, two views: props {view: "graph"} is the commit graph (graph/), and the
-    // graph's menus and dialogs come back here with props.role.
+    // One mod, three views: props {view: "graph"} is the commit graph (graph/), and the
+    // graph's menus and dialogs come back here with props.role; {view: "switch"} is the Git
+    // panel's switch row (switch.js).
+    if (props()?.view === "switch") { this.switcher = true; return; }
     if (props()?.view === "graph" || props()?.role) { this.graph = new GitGraph(); this.graph.init(_props, cx); return; }
     this.files = []; this.rows = []; this.diffWidth = 0; this.message = ""; this.handle = cx.focus_handle();
     this.input = InputState.new({ placeholder: "Commit message" });
@@ -301,11 +304,12 @@ export default class Changes extends View {
   }
 
   render(cx) {
+    if (this.switcher) return renderSwitch();
     if (this.graph) return this.graph.render(cx);
     if (key() !== this.context) this.refresh(cx);
     const t = theme(), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
     const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading);
-    const wrap = shared("omarchy-changes.wrap") === true, graph = props()?.graph;
+    const wrap = shared("omarchy-changes.wrap") === true;
     const listH = this.listH ?? Math.min(200, Math.max(44, this.files.length * 28 + 12));
     const headButton = (id, label, on, onClick, icon) => h_flex().id(id).h(22).px(7).gap(5).flex_none().items_center().border_1().cursor_pointer().text_size(11)
       .border_color(on ? t.accent : t.border).text_color(on ? t.accent : t.muted).hover((s) => s.text_color(t.foreground)).on_click(onClick)
@@ -317,9 +321,7 @@ export default class Changes extends View {
       .on_key_down((e, cx) => {
         if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); }
       })
-      // Graph sits where the graph's back button does, so the two toggle in place.
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .when(Boolean(graph), (e) => e.child(headButton("changes-graph", "Graph", false, () => run("layout.select", { stack: "changes", child: graph }), "mods/omarchy-changes/graph.svg")))
         .child(headButton("changes-wrap", "Wrap", wrap, () => setShared("omarchy-changes.wrap", !wrap)))
         .child(div().text_size(11).text_color(t.muted).child("CHANGES"))
         .child(div().px(5).py(1).rounded(0).text_size(10).text_color(t.muted).child(`${this.files.length} files`))
