@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { exec, appHome, focused, notify, readTextFile, run, theme, nextCommand } from "herdr";
+import { exec, appHome, focused, notify, readTextFile, run, setShared, theme, nextCommand } from "herdr";
 import { MAX_SECONDS, findTools, missing, buildLive, terminalSize, screenText, screenTerms, startLive, startRecording, stopRecording, cancelRecording, transcribe, saveClipboard, restoreClipboard, writeClipboard } from "./voice.js";
 
 // Push-to-talk dictation for any terminal: `omarchy-voice.toggle` starts recording, the next one
@@ -8,7 +8,7 @@ import { MAX_SECONDS, findTools, missing, buildLive, terminalSize, screenText, s
 // Where the live helper builds (live.swift, macOS 26+), the words are typed into the terminal while
 // they are said, and whisper.cpp corrects them at the stop.
 // Placed once in the layout (a small mic in the top bar); the copy there takes the key.
-// The helper marks the words it types (🎤 while it listens, ⏳ while whisper writes).
+// omarchy-voice-live, a float at the bottom of the panes, shows that it listens or writes.
 
 const MODELS = () => `${appHome()}/data/whisper`;
 const DIR = () => `${appHome()}/data/omarchy-voice`;
@@ -22,6 +22,8 @@ const LIVE = () => `${DIR()}/live`;
 // with the terms on the terminal's screen after it, in EXPECTED.
 const WORDS = () => `${DIR()}/words.txt`;
 const EXPECTED = () => `${FILE()}.words`;
+// Shared with omarchy-voice-live: "listening", "writing" (whisper at work), or null.
+const STATE = "omarchy-voice.state";
 // How long whisper may take to correct a live dictation, in seconds.
 const CORRECTING = 120;
 const RED = "#ff5d6c";
@@ -35,6 +37,7 @@ export default class OmarchyVoice extends View {
     this.stopWhenStarted = false;
     // A reload or crash may have left a recorder running; it would hold the microphone.
     cancelRecording(exec, FILE());
+    setShared(STATE, null);
     // The live helper, once it is built (the first build takes a while); null until then.
     this.live = null;
     buildLive(exec, LIVE_SOURCE(), LIVE()).then((bin) => { this.live = bin; });
@@ -61,6 +64,7 @@ export default class OmarchyVoice extends View {
 
   async close() {
     if (this.state === "recording" || this.state === "starting") await cancelRecording(exec, FILE());
+    setShared(STATE, null);
   }
 
   toggle(cx) {
@@ -73,6 +77,7 @@ export default class OmarchyVoice extends View {
   async start(cx) {
     this.state = "starting";
     this.stopWhenStarted = false;
+    setShared(STATE, "listening");
     cx.notify();
     // Typing as it goes, when the live helper is there and a terminal is focused to type into: the
     // helper starts as soon as the terminal's size is known, with the tools found last time (this.tools,
@@ -90,6 +95,7 @@ export default class OmarchyVoice extends View {
       const lack = missing(tools, MODELS());
       if (lack) {
         this.state = "idle";
+        setShared(STATE, null);
         say(lack, "error", 10000);
         return;
       }
@@ -98,6 +104,7 @@ export default class OmarchyVoice extends View {
     }
     if (trouble) {
       this.state = "idle";
+      setShared(STATE, null);
       say(trouble, "error", 10000);
       return;
     }
@@ -118,6 +125,7 @@ export default class OmarchyVoice extends View {
 
   async finish(cx) {
     this.state = "writing";
+    setShared(STATE, "writing");
     cx.notify();
     let keep = false;
     try {
@@ -136,6 +144,7 @@ export default class OmarchyVoice extends View {
       say(`Dictation failed: ${e?.message ?? e}`);
     } finally {
       this.state = "idle";
+      setShared(STATE, null);
       exec("rm", ["-f", FILE(), `${FILE()}.log`, EXPECTED()]).catch(() => null);
     }
   }

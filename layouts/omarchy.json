@@ -192,6 +192,16 @@
               "children": [
                 {
                   "id": "main",
+                  "floating": [
+                    {
+                      "id": "voice-live",
+                      "content": {
+                        "mod": "omarchy-voice-live"
+                      },
+                      "edge": "bottom",
+                      "align": "center"
+                    }
+                  ],
                   "type": "block",
                   "content": {
                     "tab": "active",

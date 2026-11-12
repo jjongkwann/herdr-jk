@@ -9,27 +9,17 @@
 // <words file>: terms to expect, one per line (names, English words), read when whisper starts; it
 // may be missing. The microphone opens first, so what is said while the rest starts is not lost.
 // Typing goes through `hc attach` in a pty of the terminal's own size, so nothing is resized.
-// A mark goes in front of the words while it works, where the person is looking: LISTENING while it
-// listens, WRITING while whisper writes; it is taken back at the end.
 
 import AVFAudio
 import Foundation
 import Speech
 
-// The marks: one wide character each, single code points (no variation selector), so one backspace takes one back.
-let LISTENING = "🎤 "
-let WRITING = "⏳ "
-
-// The terminal's keyboard, and what has been typed into it so far: a mark, then the words.
+// The terminal's keyboard, and what has been typed into it so far.
 final class Typist: @unchecked Sendable {
   private let master: Int32
   private let attach = Process()
   private var typed: [Character] = []
-  private var mark = ""
-  private var words = ""
   private let lock = NSLock()
-  // hc needs a moment before it passes keys on.
-  private var ready = Date()
 
   init(terminal: String, cols: UInt16, rows: UInt16) throws {
     master = posix_openpt(O_RDWR | O_NOCTTY)
@@ -57,29 +47,15 @@ final class Typist: @unchecked Sendable {
       var buffer = [UInt8](repeating: 0, count: 65536)
       while read(fd, &buffer, buffer.count) > 0 {}
     }.start()
-    ready = Date().addingTimeInterval(0.3)
   }
 
-  // The words after the mark become `text`.
+  // Makes the typed text `text`: backspaces over what differs, then the new end. Control characters
+  // become spaces: a line end or an escape from a model would reach the program as Enter or a key,
+  // and could send the words off. Keys written before hc is attached wait in the pty.
   func set(_ text: String) {
     lock.lock()
     defer { lock.unlock() }
-    words = text
-    type(mark + words)
-  }
-
-  // The mark in front of the words becomes `text` ("" takes it away).
-  func mark(_ text: String) {
-    lock.lock()
-    defer { lock.unlock() }
-    mark = text
-    type(mark + words)
-  }
-
-  // Makes the typed text `text`: backspaces over what differs, then the new end. Under the lock.
-  private func type(_ text: String) {
-    Thread.sleep(until: ready)
-    let new = Array(text)
+    let new = Array(String(String.UnicodeScalarView(text.unicodeScalars.map { $0.value < 0x20 || (0x7f...0x9f).contains($0.value) ? " " : $0 })))
     var same = 0
     while same < typed.count, same < new.count, typed[same] == new[same] { same += 1 }
     let keys = String(repeating: "\u{7f}", count: typed.count - same) + String(new[same...])
@@ -92,10 +68,15 @@ final class Typist: @unchecked Sendable {
     }
   }
 
+  // Detaches (Ctrl+\) once hc has passed every key on, and waits for it to go (killed after 3 s).
+  // Ending it any sooner loses the last keys: hc takes about half a second to pass them on.
   func close() {
-    // Let hc pass the last keys on before it goes.
-    Thread.sleep(forTimeInterval: 0.3)
-    attach.terminate()
+    lock.lock()
+    defer { lock.unlock() }
+    _ = write(master, [0x1c], 1)
+    let deadline = Date().addingTimeInterval(3)
+    while attach.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+    if attach.isRunning { attach.terminate() }
   }
 }
 
@@ -155,7 +136,6 @@ struct Live {
     } catch { quit("recording: \(error.localizedDescription)", 5) }
     let typist: Typist
     do { typist = try Typist(terminal: args[1], cols: cols, rows: rows) } catch { quit("terminal: \(error.localizedDescription)", 6) }
-    typist.mark(LISTENING)
     let (inputs, feed) = AsyncStream<AnalyzerInput>.makeStream()
     Task {
       for await pcm in taps {
@@ -183,19 +163,15 @@ struct Live {
       try await analyzer.finalizeAndFinishThroughEndOfInput()
       heard = try await writer.value
     } catch {
-      typist.mark("")
       typist.close()
       quit("\(error)", 1)
     }
     let words = ((try? String(contentsOfFile: args[5], encoding: .utf8)) ?? "")
       .split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-    if args.count == 8, !heard.trimmingCharacters(in: .whitespaces).isEmpty {
-      typist.mark(WRITING)
-      if let better = whisper(args[6], model: args[7], wav: wav, language: locale.language.languageCode?.identifier ?? "auto", words: words) {
-        typist.set(better)
-      }
+    if args.count == 8, !heard.trimmingCharacters(in: .whitespaces).isEmpty,
+       let better = whisper(args[6], model: args[7], wav: wav, language: locale.language.languageCode?.identifier ?? "auto", words: words) {
+      typist.set(better)
     }
-    typist.mark("")
     typist.close()
   }
 
