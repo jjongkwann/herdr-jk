@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MODEL, pickModel, missing, clean, recorderTrouble, whisperTrouble, settledCount } from '../mods/omarchy-voice/voice.js';
+import { MODEL, pickModel, missing, clean, recorderTrouble, whisperTrouble, screenTerms } from '../mods/omarchy-voice/voice.js';
 
 test('voice picks the turbo model first and skips encoders and partial downloads', () => {
   assert.equal(pickModel(['ggml-base.bin', MODEL]), MODEL);
@@ -33,17 +33,9 @@ test('voice explains recorder and whisper failures in plain words', () => {
   assert.match(whisperTrouble('whisper_model_load: loading model'), /Try again/);
 });
 
-test('voice types live words once they stop changing, the last one later', () => {
-  const since = [];
-  assert.equal(settledCount(['오늘'], since, 0), 0);
-  assert.equal(settledCount(['오늘', '오늘날'], since, 300), 0);
-  // "오늘" has stood for 500 ms; the second word is rewritten now.
-  assert.equal(settledCount(['오늘', '날씨가', '참'], since, 500), 1);
-  assert.equal(settledCount(['오늘', '날씨가', '참'], since, 900), 1);
-  assert.equal(settledCount(['오늘', '날씨가', '참'], since, 1000), 2);
-  // The last word waits twice as long.
-  assert.equal(settledCount(['오늘', '날씨가', '참'], since, 1400), 2);
-  assert.equal(settledCount(['오늘', '날씨가', '참'], since, 1500), 3);
-  // A rewritten early word holds back everything after it.
-  assert.equal(settledCount(['어제', '날씨가', '참', '좋네요'], since, 1600), 0);
+test('voice takes the Latin-letter terms a terminal shows, the most frequent first', () => {
+  const screen = '⏺ README.md 를 열고 git commit 했습니다\n  git push origin main\n❯ README.md 다시 확인';
+  // "git", "push" and "main" are short lowercase words: left out with the filler.
+  assert.deepEqual(screenTerms(screen, 3), ['README.md', 'commit', 'origin']);
+  assert.deepEqual(screenTerms('한글만 있는 화면'), []);
 });

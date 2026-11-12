@@ -1,8 +1,8 @@
 // Recording and transcription for omarchy-voice, all on this computer: ffmpeg records the default
 // microphone (AVFoundation) to a 16 kHz mono WAV, whisper.cpp writes it down. Every function takes the
 // `exec` to run programs with (herdr's in the mod, Node's in tests), so this file imports nothing.
-// Where live.swift builds (Apple's on-device dictation, macOS 26+), it listens instead and keeps what
-// it hears so far in `<file>.txt`, and the mod types the words as they settle: no ffmpeg, no whisper.
+// Where live.swift builds (macOS 26+), that helper listens instead and types the words into the
+// terminal while they are said, then has whisper.cpp correct them (see live.swift).
 // The flow and the clean-up of whisper's output follow Shepherdr's chat dictation (mods/chat/dictate.js, MIT).
 
 // The model the mod looks for first (multilingual, good Korean, a few seconds on Apple Silicon).
@@ -47,12 +47,24 @@ export function missing(tools, modelDir) {
   return lacks.length ? `Dictation needs ${lacks.join(", ")}.` : null;
 }
 
-// Shell lines that set $p to the recorder's pid, only while that pid is still the recorder for "$1":
+// Shell lines that set $p to the recorder's pid, only while that pid is still the recorder of "$1":
 // a pid file left by a crash may name an unrelated process by now.
 const OURS = 'ours() { p=$(cat "$1.pid" 2>/dev/null) && ps -ww -p "$p" -o args= 2>/dev/null | grep -qF -- "$1"; }; ';
 
-// Builds the live preview's helper from live.swift when it is missing or older than its source.
-// Resolves with its path, or null where it can't be built (no swiftc, or macOS before 26).
+// Starts ffmpeg in the background, writing `file`; its pid goes to `file.pid`, its log to `file.log`.
+// ffmpeg quits at once when the microphone is refused or missing, so the shell watches it for 0.8 s.
+// Resolves with null once it is recording, or with what went wrong.
+export async function startRecording(exec, ffmpeg, file) {
+  const r = await exec("sh", ["-c",
+    'mkdir -p "$(dirname "$2")" && rm -f "$2" "$2.log" || exit 2; ' +
+    'nohup "$1" -nostdin -hide_banner -loglevel error -f avfoundation -i ":default" -t "$3" -ac 1 -ar 16000 -c:a pcm_s16le -y "$2" </dev/null >"$2.log" 2>&1 & ' +
+    'p=$!; echo $p > "$2.pid"; i=0; while [ $i -lt 8 ]; do sleep 0.1; kill -0 $p 2>/dev/null || { rm -f "$2.pid"; cat "$2.log"; exit 1; }; i=$((i+1)); done',
+    "x", ffmpeg, file, String(MAX_SECONDS)]);
+  return r.code === 0 ? null : recorderTrouble(r.stdout);
+}
+
+// Builds the live helper from live.swift when it is missing or older than its source. Resolves with
+// its path, or null where it can't be built (no swiftc, or macOS before 26).
 export async function buildLive(exec, source, bin) {
   const r = await exec("sh", ["-c",
     '[ "$2" -nt "$1" ] && exit 0; command -v swiftc >/dev/null || exit 1; mkdir -p "$(dirname "$2")" && swiftc -O -parse-as-library -o "$2" "$1" >"$2.log" 2>&1',
@@ -60,18 +72,45 @@ export async function buildLive(exec, source, bin) {
   return r?.code === 0 ? bin : null;
 }
 
-// Starts the recorder in the background; its pid goes to `file.pid`, its log to `file.log`. With
-// `live` (the helper from buildLive) that is the helper, keeping `file.txt`; else ffmpeg, writing `file`.
-// Either quits at once when the microphone is refused or missing, so the shell watches it for 0.8 s.
-// Resolves with null once it is recording, or with what went wrong.
-export async function startRecording(exec, ffmpeg, file, live = null) {
-  const record = live
-    ? 'nohup "$4" "$2.txt" </dev/null >"$2.log" 2>&1 & '
-    : 'nohup "$1" -nostdin -hide_banner -loglevel error -f avfoundation -i ":default" -t "$3" -ac 1 -ar 16000 -c:a pcm_s16le -y "$2" </dev/null >"$2.log" 2>&1 & ';
+// A terminal's size in cells, { cols, rows }, or null.
+export async function terminalSize(exec, terminal) {
+  const r = await exec("hc", ["get", terminal, "--json"]).catch(() => null);
+  try {
+    const { cols, rows } = JSON.parse(r.stdout);
+    return cols > 0 && rows > 0 ? { cols, rows } : null;
+  } catch { return null; }
+}
+
+// Terms to expect in what is said, from what a terminal shows: its words in Latin letters (names,
+// commands, files), the most frequent first, at most `limit`. Talk is mostly about what is on screen.
+export function screenTerms(text, limit = 40) {
+  const count = new Map();
+  for (const word of text.match(/[A-Za-z][A-Za-z0-9+#._-]*[A-Za-z0-9+#]/g) ?? []) {
+    // Short all-lowercase words are mostly English filler ("the", "and", "with").
+    if (word.length < 5 && word === word.toLowerCase() && !/[^a-z]/.test(word)) continue;
+    count.set(word, (count.get(word) ?? 0) + 1);
+  }
+  return [...count].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([word]) => word);
+}
+
+// What `terminal` shows now, with `lines` of its history, as text ("" when it can't be read).
+export async function screenText(exec, terminal, lines = 200) {
+  const r = await exec("hc", ["read", terminal, "--lines", String(lines)]).catch(() => null);
+  return r?.code === 0 ? r.stdout : "";
+}
+
+// Starts the live helper `bin` in the background, typing into `terminal` (of `size`) and keeping the
+// audio in `file`; its pid goes to `file.pid`, its log to `file.log`. `words` is the file of terms to
+// expect (it may be written after this; it is read at the stop); with `tools.whisper` and
+// `tools.model`, whisper corrects the text once it is stopped.
+// Resolves with null once it is listening, or with what went wrong.
+export async function startLive(exec, bin, file, terminal, size, words, tools) {
   const r = await exec("sh", ["-c",
-    'mkdir -p "$(dirname "$2")" && rm -f "$2" "$2.log" "$2.txt" || exit 2; ' + record +
-    'p=$!; echo $p > "$2.pid"; i=0; while [ $i -lt 8 ]; do sleep 0.1; kill -0 $p 2>/dev/null || { rm -f "$2.pid"; cat "$2.log"; exit 1; }; i=$((i+1)); done',
-    "x", ffmpeg ?? "", file, String(MAX_SECONDS), ...(live ? [live] : [])]);
+    'f="$1"; bin="$2"; shift 2; mkdir -p "$(dirname "$f")" && rm -f "$f" "$f.log" || exit 2; ' +
+    'nohup "$bin" "$@" </dev/null >"$f.log" 2>&1 & ' +
+    'p=$!; echo $p > "$f.pid"; i=0; while [ $i -lt 8 ]; do sleep 0.1; kill -0 $p 2>/dev/null || { rm -f "$f.pid"; cat "$f.log"; exit 1; }; i=$((i+1)); done',
+    "x", file, bin, terminal, String(size.cols), String(size.rows), file, words,
+    ...(tools?.whisper && tools.model ? [tools.whisper, tools.model] : [])]);
   return r.code === 0 ? null : recorderTrouble(r.stdout);
 }
 
@@ -81,33 +120,18 @@ export async function recording(exec, file) {
   return r?.code === 0;
 }
 
-// Stops the recorder so it finishes the WAV or writes its last words, and waits for it to exit (at
-// most three seconds). SIGTERM, not SIGINT: a job started in the background by a non-interactive
-// shell starts with SIGINT ignored.
-export async function stopRecording(exec, file) {
+// Stops the recorder so it finishes (ffmpeg the WAV; the live helper its typing, whisper included),
+// and waits for it to exit, at most `seconds`. SIGTERM, not SIGINT: a job started in the background by
+// a non-interactive shell starts with SIGINT ignored.
+export async function stopRecording(exec, file, seconds = 2) {
   await exec("sh", ["-c", OURS +
-    'if ours "$1"; then kill -TERM "$p"; i=0; while kill -0 "$p" 2>/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done; ours "$1" && kill -KILL "$p"; fi; rm -f "$1.pid"; true',
-    "x", file]);
+    'if ours "$1"; then kill -TERM "$p"; i=0; while kill -0 "$p" 2>/dev/null && [ $i -lt "$2" ]; do sleep 0.1; i=$((i+1)); done; ours "$1" && kill -KILL "$p"; fi; rm -f "$1.pid"; true',
+    "x", file, String(seconds * 10)], { timeout: (seconds + 5) * 1000 });
 }
 
 // Throws a recording away (the mod reloading or closing mid-recording).
 export async function cancelRecording(exec, file) {
-  await exec("sh", ["-c", OURS + 'ours "$1" && kill -TERM "$p"; rm -f "$1.pid" "$1" "$1.log" "$1.txt"; true', "x", file]).catch(() => null);
-}
-
-// How many of `words` (the live text so far, split at spaces) can be typed now: the leading ones that
-// haven't changed for `hold` ms. The recognizer rewrites its
-// recent words as it hears more, and typed text can't be taken back. `since` is the caller's array for
-// one recording: per word, what it was and from when; updated here.
-export function settledCount(words, since, now, hold = 500) {
-  let count = 0;
-  for (let i = 0; i < words.length; i++) {
-    if (since[i]?.word !== words[i]) since[i] = { word: words[i], at: now };
-    // The last word gets twice as long: it may still grow ("받아" into "받아쓰기").
-    if (count === i && now - since[i].at >= (i < words.length - 1 ? hold : hold * 2)) count = i + 1;
-  }
-  since.length = words.length;
-  return count;
+  await exec("sh", ["-c", OURS + 'ours "$1" && kill -TERM "$p"; rm -f "$1.pid" "$1" "$1.log" "$1.words"; true', "x", file]).catch(() => null);
 }
 
 // Writes `file` down. Resolves with { text } ("" when nothing was heard) or { error }.
