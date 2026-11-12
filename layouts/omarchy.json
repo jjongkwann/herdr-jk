@@ -1,5 +1,15 @@
 {
   "id": "root",
+  "floating": [
+    {
+      "id": "voice-live",
+      "content": {
+        "mod": "omarchy-voice-live"
+      },
+      "edge": "bottom",
+      "align": "center"
+    }
+  ],
   "type": "column",
   "titlebar": "none",
   "traffic_lights": [
