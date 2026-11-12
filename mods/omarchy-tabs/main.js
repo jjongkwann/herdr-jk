@@ -21,8 +21,6 @@ function find(node, id) {
 
 // The panel-body child each optional button opens, and the mod (installed on its own) it needs.
 const NEEDS = { review: "reviewer", tasks: "tasks", artifacts: "artifacts", prs: "pr-flow", "herdr-sim": "herdr-sim" };
-// The Changes stack's graph view (layouts/omarchy.json), shown by the Graph button.
-const GRAPH = "git-graph";
 
 export default class Tabs extends View {
   init(_props, cx) {
@@ -238,17 +236,13 @@ export default class Tabs extends View {
     const activeTab = shown.find(c => c.active)?.id;
     const git = space?.branch != null || allPanes.some(p => p.tab === activeTab && p.branch != null);
     const enabled = panel && body
-      ? [...(shared("workspace.panels") ?? ["files", "changes"]), "graph", "review", "prs", "herdr-sim", "tasks", "artifacts"].filter(id => Boolean(find(body, id === "graph" ? GRAPH : id)))
+      ? [...(shared("workspace.panels") ?? ["files", "changes"]), "review", "prs", "herdr-sim", "tasks", "artifacts"].filter(id => Boolean(find(body, id)))
         .filter(id => !NEEDS[id] || this.mods?.[NEEDS[id]])
-        .filter(id => (id !== "changes" && id !== "review" && id !== "graph") || git)
+        .filter(id => (id !== "changes" && id !== "review") || git)
       : [];
     this.syncPanel(space, panel, body, enabled);
-    // Graph is a view inside the Changes stack (its git-graph block), not a panel of its own.
-    const changes = find(body, "changes");
-    const showing = (id) => id === "graph" ? body?.active === "changes" && changes?.active === GRAPH
-      : id === "changes" ? body?.active === "changes" && changes?.active !== GRAPH : body?.active === id;
     const panelButton = (id, label, icon) => {
-      const on = panel && !panel.hidden && showing(id), last = id === enabled[enabled.length - 1];
+      const on = panel && !panel.hidden && body?.active === id, last = id === enabled[enabled.length - 1];
       // Full-height cells like the tabs, so the strip has one rhythm and no odd gaps.
       return h_flex().id(`panel-${id}`).h_full().px(12).gap(6).flex_none().items_center().rounded(0).when(last, el => el.rounded_r(inner)).border_l(1).border_color(t.border)
         .text_size(12).bg(on ? sel : idle).text_color(on ? t.foreground : t.muted)
@@ -256,8 +250,7 @@ export default class Tabs extends View {
         .on_click(() => {
           if (on) run("layout.hide", { id: "panel" });
           else {
-            if ((id === "graph" || id === "changes") && changes?.children) run("layout.select", { stack: "changes", child: id === "graph" ? GRAPH : changes.children.find(c => c.id !== GRAPH)?.id });
-            run("layout.select", { stack: "panel-body", child: id === "graph" ? "changes" : id });
+            run("layout.select", { stack: "panel-body", child: id });
             run("layout.show", { id: "panel" });
           }
         }).child(svg(icon).size(14)).child(label);
@@ -273,7 +266,6 @@ export default class Tabs extends View {
       .child(h_flex().h_full().gap(0).items_center().flex_none()
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
-      .when(enabled.includes("graph"), el => el.child(panelButton("graph", "Graph", "mods/omarchy-tabs/icons/graph.svg")))
       .when(enabled.includes("review"), el => el.child(panelButton("review", "Review", "mods/reviewer/comment.svg")))
       .when(enabled.includes("prs"), el => el.child(panelButton("prs", "PRs", "mods/pr-flow/merge.svg")))
       .when(enabled.includes("herdr-sim"), el => el.child(panelButton("herdr-sim", "Simulator", "mods/herdr-sim/icons/smartphone.svg")))
