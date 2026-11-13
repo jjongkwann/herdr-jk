@@ -11,11 +11,14 @@ function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/
     home: () => homeDir,
     appHome: () => `${homeDir}/.config/herdr-app`,
     settings: () => ({}),
+    props: () => ({}),
     readTextFile: async path => files[path] === undefined ? null : JSON.stringify(files[path]),
     shared: key => state.get(key),
     setShared: (key, value) => state.set(key, value),
     fetch: async (url, options) => {
       requests.push({ url, ...options });
+      // A promise stands for a request still in flight.
+      if (typeof response?.then === 'function') return response;
       return { ok: status === 200, status, json: async () => response };
     },
   };
@@ -25,9 +28,25 @@ function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/
   Object.assign(dependencies, providers);
   const source = readFileSync(new URL('../mods/omarchy-ai-usage/main.js', import.meta.url), 'utf8')
     .replace(/^import .*;\n/gm, '').replace('export default class', 'class');
-  const { refreshOne } = Function(...Object.keys(dependencies), `${source}\nreturn { refreshOne };`)(...Object.values(dependencies));
-  return { state, requests, route: (value, directory = null) => providers.sourcesFor(value, async () => directory), always: providers.alwaysSources, refreshOne };
+  const { refreshOne, AiUsage } = Function(...Object.keys(dependencies), `${source}\nreturn { refreshOne, AiUsage };`)(...Object.values(dependencies));
+  return { state, requests, route: (value, directory = null) => providers.sourcesFor(value, async () => directory), always: providers.alwaysSources, refreshOne, AiUsage };
 }
+
+// Starts the bar the way Herdr does, with a cx that keeps the 60-second tick and counts redraws.
+function mount(h) {
+  const m = { notifications: 0, tasks: [], tick: null };
+  const cx = {
+    timer: { every(_ms, cb) { m.tick = () => cb(cx); } },
+    spawn(fn) { const task = fn(cx); m.tasks.push(task); return task; },
+    notify() { m.notifications++; },
+  };
+  new h.AiUsage().init({}, cx);
+  return m;
+}
+// Lets pending fetches and file reads run.
+const settle = async (until = () => false) => { for (let i = 0; i < 20 && !until(); i++) await new Promise(r => setImmediate(r)); };
+const copilotLogin = { '/home/test/.config/github-copilot/hosts.json': { github: { oauth_token: 'synthetic-copilot-token' } } };
+const copilotReply = { ok: true, status: 200, json: async () => ({ quota_reset_date_utc: '2026-12-01', quota_snapshots: {} }) };
 
 const agent = key => ({ terminal: 't1', program: { key, name: key, icon: `${key}.svg`, tint: true } });
 const claude = { id: 'claude.claude', provider: 'claude', agent: 'Claude', from: { claude: '/home/test/.claude' } };
@@ -218,4 +237,26 @@ test('Claude puts its model-scoped weekly window before the plan-wide one', asyn
   ] });
   await h.refreshOne(claude);
   assert.deepEqual(h.state.get('omarchy-ai-usage.claude.claude').windows.map(w => w.short), ['Fable', '7d']);
+});
+
+test('each 60-second tick redraws while a quota request is still pending', async () => {
+  let resolveQuota, settled = false;
+  const quota = new Promise(resolve => { resolveQuota = resolve; });
+  const h = usageHarness(copilotLogin, quota);
+  h.state.set('omarchy-ai-usage.shown', { list: [copilot], idle: false });
+  const bar = mount(h);
+  try {
+    await settle(() => h.requests.length);
+    assert.equal(h.requests.length, 1, 'the fetch on load waits on Copilot');
+    bar.tasks[0].then(() => { settled = true; });
+    bar.tick();
+    assert.equal(bar.notifications, 1, 'the tick redraws before the quota fetch completes');
+    bar.tick();
+    assert.equal(bar.notifications, 2, 'a later tick redraws even though the first fetch is still pending');
+    await settle();
+    assert.equal(settled, false);
+  } finally {
+    resolveQuota(copilotReply);
+    await Promise.all(bar.tasks);
+  }
 });

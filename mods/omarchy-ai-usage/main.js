@@ -47,7 +47,8 @@ export default class AiUsage extends View {
     if (props()?.overlay) return;
     this.sig = null;
     this.claudeEnv = {};
-    cx.timer.every(60e3, cx => { cx.spawn(async () => refreshAll()); cx.notify(); });
+    // Redraw before any fetch, so times and stale greys update even while a quota request is still pending.
+    cx.timer.every(60e3, cx => { cx.notify(); cx.spawn(async () => refreshAll()); });
     // A start or a reload of this mod fetches at once, so a change shows without waiting for the 5-minute cycle.
     cx.spawn(async () => refreshAll(true));
   }
