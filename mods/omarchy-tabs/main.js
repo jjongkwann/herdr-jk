@@ -7,6 +7,7 @@ import { spaces, panes, terminals, props, run, openOverlay, theme, shared, setSh
 import { chatAgents, spacesWithChats } from "./parked.js";
 import { resumeCommand, argvOf } from "./reopen.js";
 import { coordinatorTab, openCoordinator } from "./coordinator.js";
+import { jump } from "./jump.js";
 
 // The last closed tabs (newest last), kept across restarts for ctrl-alt-shift-t.
 const CLOSED = "omarchy-tabs.closed";
@@ -18,6 +19,13 @@ function find(node, id) {
     if (found) return found;
   }
   return null;
+}
+
+// Herdr's spaces with the agents shown as Chat counted in their tabs' status: such an agent has
+// no pane, so Herdr leaves it out. The strip and tab-next/prev read the same statuses.
+function withChats(allPanes = panes(), allTerminals = terminals(), raw = spaces()) {
+  if (!allPanes.some(p => p.mod === "chat")) return raw;
+  return spacesWithChats(raw, chatAgents({ panes: allPanes, terminals: allTerminals, spaces: raw, focusedPane: focused()?.pane ?? null, seen: shared("chat.seen") ?? {} }));
 }
 
 // The panel-body child each optional button opens, and the mod (installed on its own) it needs.
@@ -45,10 +53,20 @@ export default class Tabs extends View {
     // Each step touches cx, so a reloaded strip's old loop ends instead of eating the key.
     cx.spawn(async (cx) => {
       for (;;) {
-        if ((await nextCommand()) === "reopen") this.reopen(cx);
+        const c = await nextCommand();
+        if (c === "reopen") this.reopen(cx);
+        else this.jump(c);
         cx.notify();
       }
     });
+  }
+
+  // tab-next/prev: the next tab with a working or blocked agent (Chat ones too), else the next tab.
+  jump(c) {
+    const dir = c === "tab-next" ? 1 : c === "tab-prev" ? -1 : 0;
+    if (!dir) return;
+    const t = jump(withChats().find(s => s.active)?.tabs ?? [], t => t.active, dir);
+    if (t) run("tab.select", { id: t.id });
   }
 
   track(cx) {
@@ -182,10 +200,7 @@ export default class Tabs extends View {
       const s = raw.find(x => x.id === req.space);
       if (s && Date.now() - req.at < 10000 && !coordinatorTab(s)) openCoordinator(s, req.show !== false);
     }
-    // An agent shown as Chat has no pane, so Herdr leaves it out of its tab's status: count it in.
-    const space = (!allPanes.some(p => p.mod === "chat") ? raw
-      : spacesWithChats(raw, chatAgents({ panes: allPanes, terminals: allTerminals, spaces: raw, focusedPane: focused()?.pane ?? null, seen: shared("chat.seen") ?? {} })))
-      .find(p => p.active);
+    const space = withChats(allPanes, allTerminals, raw).find(p => p.active);
     const shown = space?.tabs ?? [];
     const stop = (_e, cx) => cx.stop_propagation();
     const f = t.foreground, idle = f + "0a", hov = f + "14", sel = f + "2e";
