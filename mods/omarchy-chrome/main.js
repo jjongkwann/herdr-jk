@@ -16,12 +16,11 @@ const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
 
 // To the rail (on macOS wide enough for the traffic lights), or back to the width it had.
 function toggleSidebar() {
-  const width = find(layout(), "sidebar")?.size?.px, expanding = narrow();
-  if (!expanding) setShared("sidebar.width", width);
+  const width = find(layout(), "sidebar")?.size?.px;
+  if (!narrow()) setShared("sidebar.width", width);
   // Mods edited before the rail went by width still read the flag.
-  setShared("sidebar.collapsed", !expanding);
-  run("layout.resize", { id: "sidebar", px: expanding ? (shared("sidebar.width") ?? 268) : window()?.platform === "macos" ? 76 : 44 });
-  run("layout.resize", { id: "sidebar-footer", px: expanding ? 84 : 136 });
+  setShared("sidebar.collapsed", !narrow());
+  run("layout.resize", { id: "sidebar", px: narrow() ? (shared("sidebar.width") ?? 268) : window()?.platform === "macos" ? 76 : 44 });
 }
 
 export default class WorkspaceChrome extends View {
@@ -40,7 +39,21 @@ export default class WorkspaceChrome extends View {
       if (find(layout(), "sidebar")?.size?.px !== width) return this.snap(cx);
       setShared("sidebar.collapsed", width < 100);
       run("layout.resize", { id: "sidebar", px: width < 100 ? rail : 160 });
-      run("layout.resize", { id: "sidebar-footer", px: width < 100 ? 136 : 84 });
+    });
+  }
+  // The footer is two rows of two on the full sidebar and a stack of four on the rail. The bar's toggle,
+  // the agents list's » and drags move only the sidebar, so the footer takes the height for its width here.
+  fit(cx) {
+    const want = () => {
+      const node = find(layout(), "sidebar-footer"), px = narrow() ? 136 : 84;
+      return node && node.size?.px !== px ? px : null;
+    };
+    if (this.fitting || want() === null) return;
+    this.fitting = true;
+    cx.timer.after(0, () => {
+      this.fitting = false;
+      const px = want();
+      if (px !== null) run("layout.resize", { id: "sidebar-footer", px });
     });
   }
   render(cx) {
@@ -48,6 +61,7 @@ export default class WorkspaceChrome extends View {
     const collapsed = narrow();
     if (props()?.footer) {
       this.snap(cx);
+      this.fit(cx);
       const row = (id, icon, label, dim, action, short) => h_flex().id(id).h(26).px(6).gap(6).items_center()
         .when(collapsed, el => el.size(30).px(0).justify_center().relative().tooltip(label)).rounded(0).border(1).border_color(t.foreground + "00")
         .text_color(dim ? t.dim : t.muted).hover(s => s.bg(t.foreground + "14").border_color(t.foreground + "40").text_color(t.foreground)).cursor_pointer()
