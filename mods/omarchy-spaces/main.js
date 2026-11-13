@@ -368,6 +368,36 @@ export default class Spaces extends View {
       .when(g.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`\u2193${g.behind}`)));
   }
 
+  // Closes the space. One with an agent working or waiting on you takes a second click within 3s.
+  closer(t, w) {
+    const armed = this.arming === w.id;
+    return div()
+      .id(`close-${w.id}`)
+      .flex_none()
+      .ml(4)
+      .p(2)
+      .rounded(0)
+      .text_color(armed ? t.blocked : t.dim)
+      .when(armed, (el) => el.bg(t.blocked + "26"))
+      .cursor_pointer()
+      .hover((s) => s.bg(t.foreground + "14").text_color(armed ? t.blocked : t.foreground))
+      .tooltip(armed ? "Click again to close it" : "Close space")
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        if ((w.status === "working" || w.status === "blocked") && !armed) {
+          this.arming = w.id;
+          cx.timer.after(3000, (cx) => { if (this.arming === w.id) this.arming = null; cx.notify(); });
+        } else {
+          this.arming = null;
+          this.hovered = null;
+          run("space.close", { id: w.id, confirmed: armed });
+        }
+        cx.notify();
+      })
+      .child(svg("mods/omarchy-chrome/x.svg").size(13));
+  }
+
   row({ w, i, g, tree }, t) {
     const on = w.active;
     const fromIndex = this.pressed === null ? -1 : spaces().findIndex(s => s.id === this.pressed);
@@ -414,6 +444,11 @@ export default class Spaces extends View {
         cx.notify();
       })
       .on_mouse_down("right", () => this.menu(w))
+      .on_hover((over, cx) => {
+        if (over) this.hovered = w.id;
+        else if (this.hovered === w.id) this.hovered = null;
+        cx.notify();
+      })
       .child(
         h_flex()
           .gap(8)
@@ -423,10 +458,12 @@ export default class Spaces extends View {
             .when(on, el => el.bg(t.accent).text_color(t.accent_foreground))
             .when(!on, el => el.border(1).border_color(t.border).text_color(t.dim))
             .child(String(i + 1))))
-          .child(div().flex_shrink(0).max_w(room() * 7).truncate().text_color(t.foreground).child(w.name))
+          // A long name gives way to the close button instead of pushing it past the row's edge.
+          .child(div().min_w(0).max_w(room() * 7).truncate().text_color(t.foreground).child(w.name))
           .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())
           // A space with an agent working, waiting on you, or finished gets a square in that status color.
-          .when(!tree && ["working", "blocked", "done"].includes(w.status), el => el.child(div().size(6).flex_none().ml(6).bg(tone(t, w.status)))),
+          .when(!tree && ["working", "blocked", "done"].includes(w.status), el => el.child(div().size(6).flex_none().ml(6).bg(tone(t, w.status))))
+          .when(this.hovered === w.id || this.arming === w.id, el => el.child(this.closer(t, w))),
       );
   }
 
