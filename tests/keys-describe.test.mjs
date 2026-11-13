@@ -33,6 +33,8 @@ test('names our own keys and the global ones Herdr ships', () => {
   assert.deepEqual(describe('omarchy-pane.toggle'), { group: 'Panes', label: 'Switch pane between Chat and Terminal' });
   assert.deepEqual(describe('omarchy-tabs.tab-next'), { group: 'Tabs', label: 'Next tab with a running agent' });
   assert.deepEqual(describe('omarchy-tabs.tab-prev'), { group: 'Tabs', label: 'Previous tab with a running agent' });
+  assert.deepEqual(describe('omarchy-tabs.pane-back'), { group: 'Panes', label: 'Back to the previous pane' });
+  assert.deepEqual(describe('omarchy-tabs.pane-forward'), { group: 'Panes', label: 'Forward to the next pane' });
   assert.deepEqual(describe('pr-flow.refresh'), { group: 'Git', label: 'Refresh pull requests' });
   assert.deepEqual(describe('omarchy-bar.fullscreen'), { group: 'Look', label: 'Enter or leave full screen' });
   assert.deepEqual(describe('mod.open:omarchy-backgrounds'), { group: 'Dialogs', label: 'Open wallpaper picker' });

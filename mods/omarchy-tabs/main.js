@@ -8,6 +8,7 @@ import { chatAgents, spacesWithChats } from "./parked.js";
 import { resumeCommand, argvOf } from "./reopen.js";
 import { coordinatorTab, openCoordinator } from "./coordinator.js";
 import { jump } from "./jump.js";
+import { PaneHistory, placeOf, SETTLE } from "./history.js";
 
 // The last closed tabs (newest last), kept across restarts for ctrl-alt-shift-t.
 const CLOSED = "omarchy-tabs.closed";
@@ -41,6 +42,7 @@ export default class Tabs extends View {
     this.roots = {};
     this.commands = {};
     this.shells = {};
+    this.history = new PaneHistory();
     cx.spawn(async (cx) => {
       this.source = await readTextFile(`${appHome()}/mods/omarchy-tabs/reopen.py`).catch(() => null);
       this.refresh(cx);
@@ -55,6 +57,7 @@ export default class Tabs extends View {
       for (;;) {
         const c = await nextCommand();
         if (c === "reopen") this.reopen(cx);
+        else if (c === "pane-back" || c === "pane-forward") this.paneStep(c === "pane-back" ? -1 : 1);
         else this.jump(c);
         cx.notify();
       }
@@ -67,6 +70,25 @@ export default class Tabs extends View {
     if (!dir) return;
     const t = jump(withChats().find(s => s.active)?.tabs ?? [], t => t.active, dir);
     if (t) run("tab.select", { id: t.id });
+  }
+
+  // Pane back / forward (history.js): a focus that stays SETTLE ms goes in the history.
+  watchFocus(lists, cx) {
+    if (this.history.see(placeOf(focused(), lists), Date.now())) cx.timer.after(SETTLE + 20, (cx) => this.settleFocus(cx));
+  }
+
+  settleFocus(cx) {
+    this.watchFocus({ panes: panes(), terminals: terminals(), spaces: spaces() }, cx);
+    this.history.settle(Date.now());
+  }
+
+  paneStep(dir) {
+    const lists = { panes: panes(), terminals: terminals(), spaces: spaces() };
+    const to = this.history.go(dir, lists, placeOf(focused(), lists), Date.now());
+    if (!to) return;
+    run("space.select", { id: to.space });
+    run("tab.select", { id: to.tab });
+    run("pane.focus", { pane: to.pane });
   }
 
   track(cx) {
@@ -193,6 +215,7 @@ export default class Tabs extends View {
     syncNames();
     const t = theme();
     const allPanes = panes(), allTerminals = terminals(), raw = spaces();
+    this.watchFocus({ panes: allPanes, terminals: allTerminals, spaces: raw }, cx);
     // Shepherdr's + menu asks the tab bar to open a space's Assistant (coordinator.openreq).
     const req = shared("coordinator.openreq");
     if (req) {
