@@ -6,6 +6,8 @@ import { renderPaneHeader } from "./pane.js";
 import { spaces, panes, terminals, props, run, openOverlay, theme, shared, setShared, layout, exec, readTextFile, home, appHome, nextCommand, notify, focused } from "herdr";
 import { chatAgents, spacesWithChats } from "./parked.js";
 import { resumeCommand, argvOf } from "./reopen.js";
+import { coordinatorTab, openCoordinator } from "./coordinator.js";
+import { jump } from "./jump.js";
 
 // The last closed tabs (newest last), kept across restarts for ctrl-alt-shift-t.
 const CLOSED = "omarchy-tabs.closed";
@@ -17,6 +19,13 @@ function find(node, id) {
     if (found) return found;
   }
   return null;
+}
+
+// Herdr's spaces with the agents shown as Chat counted in their tabs' status: such an agent has
+// no pane, so Herdr leaves it out. The strip and tab-next/prev read the same statuses.
+function withChats(allPanes = panes(), allTerminals = terminals(), raw = spaces()) {
+  if (!allPanes.some(p => p.mod === "chat")) return raw;
+  return spacesWithChats(raw, chatAgents({ panes: allPanes, terminals: allTerminals, spaces: raw, focusedPane: focused()?.pane ?? null, seen: shared("chat.seen") ?? {} }));
 }
 
 // The panel-body child each optional button opens, and the mod (installed on its own) it needs.
@@ -44,10 +53,20 @@ export default class Tabs extends View {
     // Each step touches cx, so a reloaded strip's old loop ends instead of eating the key.
     cx.spawn(async (cx) => {
       for (;;) {
-        if ((await nextCommand()) === "reopen") this.reopen(cx);
+        const c = await nextCommand();
+        if (c === "reopen") this.reopen(cx);
+        else this.jump(c);
         cx.notify();
       }
     });
+  }
+
+  // tab-next/prev: the next tab with a working or blocked agent (Chat ones too), else the next tab.
+  jump(c) {
+    const dir = c === "tab-next" ? 1 : c === "tab-prev" ? -1 : 0;
+    if (!dir) return;
+    const t = jump(withChats().find(s => s.active)?.tabs ?? [], t => t.active, dir);
+    if (t) run("tab.select", { id: t.id });
   }
 
   track(cx) {
@@ -76,7 +95,7 @@ export default class Tabs extends View {
   probeMods(cx) {
     cx.spawn(async (cx) => {
       const found = {};
-      for (const m of new Set([...Object.values(NEEDS), "omarchy-browser"]))
+      for (const m of new Set([...Object.values(NEEDS), "omarchy-browser", "new-menu-tasks"]))
         found[m] = await readTextFile(`${appHome()}/mods/${m}/mod.json`).then(Boolean, () => false);
       if (JSON.stringify(found) !== JSON.stringify(this.mods)) { this.mods = found; cx.notify(); }
     });
@@ -174,10 +193,14 @@ export default class Tabs extends View {
     syncNames();
     const t = theme();
     const allPanes = panes(), allTerminals = terminals(), raw = spaces();
-    // An agent shown as Chat has no pane, so Herdr leaves it out of its tab's status: count it in.
-    const space = (!allPanes.some(p => p.mod === "chat") ? raw
-      : spacesWithChats(raw, chatAgents({ panes: allPanes, terminals: allTerminals, spaces: raw, focusedPane: focused()?.pane ?? null, seen: shared("chat.seen") ?? {} })))
-      .find(p => p.active);
+    // Shepherdr's + menu asks the tab bar to open a space's Assistant (coordinator.openreq).
+    const req = shared("coordinator.openreq");
+    if (req) {
+      setShared("coordinator.openreq", null);
+      const s = raw.find(x => x.id === req.space);
+      if (s && Date.now() - req.at < 10000 && !coordinatorTab(s)) openCoordinator(s, req.show !== false);
+    }
+    const space = withChats(allPanes, allTerminals, raw).find(p => p.active);
     const shown = space?.tabs ?? [];
     const stop = (_e, cx) => cx.stop_propagation();
     const f = t.foreground, idle = f + "0a", hov = f + "14", sel = f + "2e";
@@ -261,7 +284,10 @@ export default class Tabs extends View {
       .child(h_flex().id("tab-scroll").max_w(shown.length * 241).flex_shrink(1).min_w(0).h_full().items_center().gap(0).overflow_x_scrollbar().children(shown.map(item)))
       .child(div().id("tab-new").h_full().w(36).flex_none().flex().items_center().justify_center().rounded(0).border_r(1).border_color(t.border).bg(idle).text_color(t.dim)
         .hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop)
-        .on_click(() => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })).child("+"))
+        // Shepherdr's + menu where it is installed, else Herdr's own (a machine without Shepherdr).
+        .on_click(() => openOverlay(this.mods?.["new-menu-tasks"]
+          ? { mod: "new-menu-tasks", kind: "popup", width: 250, height: 543 }
+          : { mod: "new-menu", kind: "popup", width: 250, height: 512 })).child("+"))
       .child(div().flex_1())
       .child(h_flex().h_full().gap(0).items_center().flex_none()
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))

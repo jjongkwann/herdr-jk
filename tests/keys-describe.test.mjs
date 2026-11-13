@@ -31,6 +31,8 @@ test('does not fold keys whose number differs from the action', () => {
 test('names our own keys and the global ones Herdr ships', () => {
   assert.deepEqual(describe('omarchy-voice.toggle'), { group: 'Terminal', label: 'Start or stop dictation' });
   assert.deepEqual(describe('omarchy-pane.toggle'), { group: 'Panes', label: 'Switch pane between Chat and Terminal' });
+  assert.deepEqual(describe('omarchy-tabs.tab-next'), { group: 'Tabs', label: 'Next tab with a running agent' });
+  assert.deepEqual(describe('omarchy-tabs.tab-prev'), { group: 'Tabs', label: 'Previous tab with a running agent' });
   assert.deepEqual(describe('pr-flow.refresh'), { group: 'Git', label: 'Refresh pull requests' });
   assert.deepEqual(describe('omarchy-bar.fullscreen'), { group: 'Look', label: 'Enter or leave full screen' });
   assert.deepEqual(describe('mod.open:omarchy-backgrounds'), { group: 'Dialogs', label: 'Open wallpaper picker' });

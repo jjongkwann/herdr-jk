@@ -47,6 +47,8 @@
     "super-down": "space.next",
     "super-shift-up": "agent.prev",
     "super-shift-down": "agent.next",
+    "super-shift-left": "omarchy-tabs.tab-prev",
+    "super-shift-right": "omarchy-tabs.tab-next",
     "ctrl-left": "pane.go:left",
     "ctrl-right": "pane.go:right",
     "ctrl-up": "pane.go:up",

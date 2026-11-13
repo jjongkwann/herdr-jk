@@ -9,6 +9,8 @@ const FIXED = {
   "tab.next": ["Tabs", "Next tab"], "tab.prev": ["Tabs", "Previous tab"],
   "tab.new": ["Tabs", "New tab"], "tab.close": ["Tabs", "Close tab"], "tab.rename": ["Tabs", "Rename tab"],
   "omarchy-tabs.reopen": ["Tabs", "Reopen closed tab"],
+  "omarchy-tabs.tab-next": ["Tabs", "Next tab with a running agent"],
+  "omarchy-tabs.tab-prev": ["Tabs", "Previous tab with a running agent"],
   "pane.close": ["Panes", "Close pane"], "pane.zoom": ["Panes", "Zoom pane"],
   "omarchy-pane.toggle": ["Panes", "Switch pane between Chat and Terminal"],
   "mod.open:equal-width": ["Panes", "Make panes equal width"],
