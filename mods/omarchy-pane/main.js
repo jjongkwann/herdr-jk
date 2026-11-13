@@ -16,12 +16,15 @@
 // herdr.chat=<chat pane> says which chat shows which agent; omarchy-agents and omarchy-spaces
 // read it to keep listing the parked agent. A chat pane wears its agent's header, and its ✕
 // ends the agent after asking. "omarchy-pane.toggle" switches the focused pane.
+// A space's Assistant tab opens in Terminal view: its chat with no agent yet, once shown, has
+// Shepherdr's chat start the agent, then swaps to its terminal (assistant.js).
 // Adapted from Shepherdr's pane-chat (MIT, see NOTICE).
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, InputState, Input } from "gpui-base";
-import { panes, terminals, props, run, theme, home, exec, hc, notify, nextCommand, readTextFile, appHome, layout, shared, setShared, window } from "herdr";
+import { panes, terminals, spaces, machines, props, run, theme, home, exec, hc, notify, nextCommand, readTextFile, appHome, layout, shared, setShared, window } from "herdr";
 import { act, readLive, watchLive, touches } from "./browser/client.js";
+import { assistantStep, slotOf } from "./assistant.js";
 
 const CHAT = "chat";
 const LABEL = "herdr.chat";
@@ -31,6 +34,8 @@ let lastSwap = 0;
 // is no switch.
 let chatInstalled = false;
 let chatCheck = null;
+// Each Assistant chat's record for assistantStep, by pane (every copy of this build shares it).
+const assistantMemos = new Map();
 
 // Chat reads Claude Code's and Codex's own session logs; other agents have no chat.
 const chatty = (p) => Boolean(p?.terminal) && (["claude-code", "codex"].includes(p.app) || ["claude", "codex"].includes(p.program?.key));
@@ -326,6 +331,30 @@ export default class Pane extends View {
     });
   }
 
+  // An Assistant chat with no agent yet (assistant.js): once it has been shown a moment, Shepherdr's
+  // chat starts its agent (shared "chat.startreq"); once that runs, its terminal takes the chat's
+  // spot. Acts from a timer, never in the render itself.
+  autoAssistant(self, cx) {
+    // Only Assistant chats need the lists; one that had its agent here never starts another.
+    if (assistantMemos.get(self.pane)?.had || !slotOf(self.pane, shared("coordinator.slots"))) return;
+    const ps = panes();
+    const step = assistantStep({ pane: self.pane, panes: ps, spaces: spaces(), terminals: terminals(),
+      slots: shared("coordinator.slots"), machines: machines(), now: Date.now() }, assistantMemos.get(self.pane));
+    if (Object.keys(step.memo).length) assistantMemos.set(self.pane, step.memo);
+    else assistantMemos.delete(self.pane);
+    if (assistantMemos.size > 16) for (const pane of assistantMemos.keys()) if (!ps.some((p) => p.pane === pane)) assistantMemos.delete(pane);
+    if (step.do === "wait") {
+      const at = Date.now() + step.ms;
+      if (this.wakeAt && this.wakeAt > Date.now() && this.wakeAt <= at) return;
+      this.wakeAt = at;
+      cx.timer.after(step.ms + 50, (cx) => cx.notify());
+    } else if (step.do === "start") {
+      cx.timer.after(0, () => setShared("chat.startreq", { pane: self.pane, at: Date.now() }));
+    } else if (step.do === "terminal") {
+      cx.timer.after(0, (cx) => { lastSwap = Date.now(); this.toTerminal(self.pane, cx); });
+    }
+  }
+
   // A chat pane's ✕ does what an agent pane's does: ends the agent, and the pane goes. It asks
   // first, in the header itself (this.ending).
   closeChat(chat) {
@@ -523,6 +552,7 @@ export default class Pane extends View {
     if (this.live && self.terminal === this.terminal) return this.browserHeader(t, self);
     // A chat pane wears its agent's header: its name, folder and status.
     const chatMode = self.mod === CHAT;
+    if (chatMode && chatInstalled) this.autoAssistant(self, cx);
     const entry = chatMode ? agentEntry(self.pane) : null;
     const agent = entry?.address ?? null;
     const p = entry ? parked(entry) : self;

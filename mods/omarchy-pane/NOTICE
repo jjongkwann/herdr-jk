@@ -3,7 +3,9 @@ the toggle loop, toChat, toTerminal and closeChat) is adapted from Shepherdr's p
 and mods/omarchy-agents/parked.js, mods/omarchy-agents/sweep.js and mods/omarchy-spaces/parked.js
 from Shepherdr's lib/parked.js, https://github.com/eliasstravik/shepherdr, under the MIT License
 below. Changes: omarchy's square look and rounded header corners, native notifications instead of
-Shepherdr's toasts, no Assistant or Autopilot parts, and the lists passed in as arguments.
+Shepherdr's toasts, no Autopilot parts, and the lists passed in as arguments. In
+mods/omarchy-pane/assistant.js, slotOf follows pane-chat's lazySlot and isAssistant follows
+Shepherdr's lib/coordinator.js isCoordinator; the start itself is left to Shepherdr's chat mod.
 
 MIT License
 
