@@ -222,6 +222,9 @@ export default class Agents extends View {
   }
 
   // Stops the agent. One that is working or needs you takes a second click within 3s.
+  // `address` is always the agent's own terminal: a parked agent (parked.js) is listed by its
+  // terminal, not its chat pane, so that terminal ends, here or on another machine (`mini/t5`),
+  // and its chat pane then closes itself, as an agent's own pane does when the agent ends.
   closer(t, address, status) {
     const armed = this.arming === address;
     return div()
