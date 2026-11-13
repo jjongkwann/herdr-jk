@@ -1,4 +1,6 @@
-import { appHome, home, readTextFile } from "herdr";
+import { createHash } from "crypto";
+import { platform } from "os";
+import { appHome, exec, home, readTextFile } from "herdr";
 import { H, DAY } from "./time.js";
 
 // A path is absolute when it starts with / or, on Windows, a drive letter (C:\ or C:/).
@@ -91,12 +93,44 @@ const HARNESS = {
 };
 const UNDER = { anthropic: "claude", "openai-codex": "codex", openai: "codex", "github-copilot": "copilot" };
 
+// On macOS Claude Code keeps its live login in the Keychain and refreshes it there, so
+// .credentials.json can hold an expired copy. ~/.claude's item is "Claude Code-credentials"; another
+// CLAUDE_CONFIG_DIR's ends in the first 8 hex digits of the SHA-256 of that path (NFC).
+const keychainService = dir => (dir === `${home()}/.claude` ? "Claude Code-credentials"
+  : `Claude Code-credentials-${createHash("sha256").update(dir.normalize("NFC")).digest("hex").slice(0, 8)}`);
+const security = args => exec("/usr/bin/security", args, { timeout: 10e3 });
+
+// The login JSON's claudeAiOauth, or null. A refusal, a prompt left unanswered or a broken entry
+// counts as no login; nothing from the call (its output holds the token) goes into an error.
+async function keychainLogin(dir) {
+  if (platform() !== "macos") return null;
+  try {
+    const r = await security(["find-generic-password", "-s", keychainService(dir), "-w"]);
+    return r.code === 0 ? JSON.parse(r.stdout)?.claudeAiOauth ?? null : null;
+  } catch { return null; }
+}
+
+// Whether a profile has a login: its file, or on macOS its Keychain item. Asked without -w (the
+// item's attributes, never its secret) and at most every 5 minutes per folder, since tab switches ask.
+const keychainHas = new Map();
+async function hasClaudeLogin(dir) {
+  if (await json(`${dir}/.credentials.json`)) return true;
+  if (platform() !== "macos") return false;
+  const seen = keychainHas.get(dir);
+  if (!seen || Date.now() - seen.at >= 5 * 60e3) {
+    keychainHas.set(dir, { at: Date.now(), has: security(["find-generic-password", "-s", keychainService(dir)]).then(r => r.code === 0, () => false) });
+  }
+  return keychainHas.get(dir).has;
+}
+
 // Rebuilt from the plain source record each fetch, so the popup copy can refresh too.
 async function creds(src) {
   const f = src.from;
   if (f.claude) {
-    const o = (await json(`${f.claude}/.credentials.json`))?.claudeAiOauth;
-    if (!o?.accessToken) throw new Error(`no Claude Code login in ${f.claude.replace(home(), "~")}`);
+    // Whichever of the Keychain and the file runs out later; the Keychain on a tie.
+    const [chain, file] = await Promise.all([keychainLogin(f.claude), json(`${f.claude}/.credentials.json`).then(j => j?.claudeAiOauth)]);
+    const o = [chain, file].filter(l => l?.accessToken).sort((a, b) => (b.expiresAt ?? 0) - (a.expiresAt ?? 0))[0];
+    if (!o) throw new Error(`no Claude Code login in ${f.claude.replace(home(), "~")}`);
     return { token: o.accessToken, expires: o.expiresAt };
   }
   if (f.codex) {
@@ -151,7 +185,7 @@ export async function sourcesFor(v, claudeDirOf) {
     const dir = await claudeDirOf(v.terminal);
     // No match for the terminal: ~/.claude, and another profile only when its folder has a login.
     const known = claudeDirs.map(d => `${home()}/${d}`);
-    const dirs = dir ? [dir] : (await Promise.all(known.map(async (d, i) => (i === 0 || await json(`${d}/.credentials.json`) ? d : null)))).filter(Boolean);
+    const dirs = dir ? [dir] : (await Promise.all(known.map(async (d, i) => (i === 0 || await hasClaudeLogin(d) ? d : null)))).filter(Boolean);
     return Promise.all(dirs.map(async d => ({ id: `claude.${claudeLabel(d)}`, provider: "claude", agent, label: await claudeName(d), sub: d.replace(home(), "~"), icon, tint, from: { claude: d } })));
   }
   if (key === "codex") return [{ id: "codex", provider: "codex", agent, label: "codex", sub: "ChatGPT plan", icon, tint, from: { codex: true } }];
@@ -172,11 +206,11 @@ export async function sourcesFor(v, claudeDirOf) {
 
 // Shown whatever the tab holds: each of these agents this machine has a login (or saved quota) for.
 export async function alwaysSources(programs) {
-  const login = { claude: ".claude/.credentials.json", codex: ".codex/auth.json", antigravity: AGY_CACHE };
+  const login = { claude: () => hasClaudeLogin(`${home()}/.claude`), codex: () => json(".codex/auth.json"), antigravity: () => json(AGY_CACHE) };
   const out = [];
-  for (const [key, file] of Object.entries(login)) {
+  for (const [key, has] of Object.entries(login)) {
     const program = programs.find(p => p.key === key);
-    if (program && await json(file)) out.push(...await sourcesFor({ program }, async () => null));
+    if (program && await has()) out.push(...await sourcesFor({ program }, async () => null));
   }
   return out;
 }
