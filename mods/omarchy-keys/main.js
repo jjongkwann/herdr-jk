@@ -4,7 +4,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { keys, theme, shared, props, closeOverlay } from "herdr";
-import { GROUPS, describe, fold } from "./describe.js";
+import { GROUPS, describe, fold, shown } from "./describe.js";
 
 // The shown layout's own keys win over global ones, so they come first.
 function title(section, layout) {
@@ -53,7 +53,7 @@ export default class OmarchyKeys extends View {
       return h_flex().id(`k-${section}-${k.keys}`).h(28).flex_none().pl(44).pr(10).gap(12).items_center().hover((s) => s.bg(t.hover))
         .child(h_flex().w(200).flex_none().gap(3).items_center().children(keyParts(k.keys).map((p) => chip(p, on))))
         .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(on ? t.foreground : shadowed ? t.dim : t.muted).child(describe(k.action).label))
-        .child(div().flex_none().max_w(200).truncate().text_size(11).text_color(t.dim).child(shadowed ? "overridden here" : k.action));
+        .child(div().flex_none().max_w(200).truncate().text_size(11).text_color(t.dim).child(shadowed ? "overridden here" : shown(k.action)));
     };
     const rows = (section) => {
       const list = all.filter((k) => k.section === section);

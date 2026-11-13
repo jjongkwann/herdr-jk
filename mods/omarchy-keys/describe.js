@@ -1,6 +1,6 @@
 // Plain-English label and type for a key's action, and alt-1..alt-9 style runs folded into one row.
 
-export const GROUPS = ["Spaces", "Tabs", "Panes", "Agents", "Terminal", "Dialogs", "Look", "Other"];
+export const GROUPS = ["Spaces", "Tabs", "Panes", "Agents", "Terminal", "Git", "Dialogs", "Look", "App", "Other"];
 
 const DIRS = { left: "left", right: "right", up: "up", down: "down" };
 const FIXED = {
@@ -8,19 +8,33 @@ const FIXED = {
   "space.new": ["Spaces", "New space"], "space.rename": ["Spaces", "Rename space"],
   "tab.next": ["Tabs", "Next tab"], "tab.prev": ["Tabs", "Previous tab"],
   "tab.new": ["Tabs", "New tab"], "tab.close": ["Tabs", "Close tab"], "tab.rename": ["Tabs", "Rename tab"],
-  "omarchy-tabs.tab-next": ["Tabs", "Next running tab"],
-  "omarchy-tabs.tab-prev": ["Tabs", "Previous running tab"],
   "omarchy-tabs.reopen": ["Tabs", "Reopen closed tab"],
   "pane.close": ["Panes", "Close pane"], "pane.zoom": ["Panes", "Zoom pane"],
+  "omarchy-pane.toggle": ["Panes", "Switch pane between Chat and Terminal"],
+  "mod.open:equal-width": ["Panes", "Make panes equal width"],
   "agent.next": ["Agents", "Next agent"], "agent.prev": ["Agents", "Previous agent"],
   "terminal.open": ["Terminal", "New terminal"], "terminal.copy": ["Terminal", "Copy"],
   "terminal.paste": ["Terminal", "Paste"], "terminal.paste_image": ["Terminal", "Paste image"],
-  "omarchy-pane.dev": ["Terminal", "Open page in Chrome"], "omarchy-pane.inspect": ["Terminal", "Open DevTools"],
+  "omarchy-voice.toggle": ["Terminal", "Start or stop dictation"],
+  "pr-flow.refresh": ["Git", "Refresh pull requests"],
   "app.palette": ["Dialogs", "Command palette"], "app.settings": ["Dialogs", "Settings"], "app.help": ["Dialogs", "Help"],
   "layout.switch": ["Look", "Switch layout"], "omarchy-bar.next-wallpaper": ["Look", "Next wallpaper"],
+  "omarchy-bar.fullscreen": ["Look", "Enter or leave full screen"],
   "app.zoom_in": ["Look", "Zoom in"], "app.zoom_out": ["Look", "Zoom out"], "app.zoom_reset": ["Look", "Reset zoom"],
+  "app.quit": ["App", "Quit Herdr"], "app.hide": ["App", "Hide Herdr"], "app.hide_others": ["App", "Hide other apps"],
+  "app.reset": ["App", "Reset to the default screen"],
 };
-const DIALOG = { palette: "command palette", "mod-manager": "mod manager", keys: "keybindings", picker: "space picker" };
+const DIALOG = {
+  palette: "command palette", "mod-manager": "mod manager", keys: "keybindings", picker: "tab picker",
+  themes: "theme picker", backgrounds: "wallpaper picker",
+};
+const PART = { topbar: "top bar" };
+// What the shell does with the bytes a key sends (emacs-style line editing).
+const SEND = {
+  "\u001bb": "Move a word left", "\u001bf": "Move a word right",
+  "\u0001": "Move to line start", "\u0005": "Move to line end",
+  "\u0017": "Delete word before cursor", "\u0015": "Delete to line start",
+};
 
 export function describe(action) {
   if (FIXED[action]) return { group: FIXED[action][0], label: FIXED[action][1] };
@@ -30,14 +44,17 @@ export function describe(action) {
   if (cmd === "pane.go" && DIRS[arg]) return { group: "Panes", label: `Focus pane ${arg}` };
   if (cmd === "pane.swap" && DIRS[arg]) return { group: "Panes", label: `Swap pane ${arg}` };
   if (cmd === "pane.split" && DIRS[arg]) return { group: "Panes", label: `Split ${arg}` };
-  if (cmd === "send") return { group: "Terminal", label: "Send keys" };
-  if (cmd === "layout.toggle") return { group: "Look", label: `Show or hide ${arg}` };
+  if (cmd === "send") return { group: "Terminal", label: SEND[arg] ?? "Send keys" };
+  if (cmd === "layout.toggle") return { group: "Look", label: `Show or hide ${PART[arg] ?? arg}` };
   if (cmd === "mod.open") {
     const name = arg.replace(/^omarchy-/, "");
     return { group: "Dialogs", label: `Open ${DIALOG[name] ?? name.replace(/-/g, " ")}` };
   }
   return { group: "Other", label: action };
 }
+
+// The raw action as text: control bytes in send:… shown in caret notation ("send:\u0017" -> "send:^W").
+export const shown = (action) => action.replace(/[\u0000-\u001f]/g, (c) => `^${String.fromCharCode(c.charCodeAt(0) + 64)}`);
 
 // alt-1 tab.select:1 ... alt-9 tab.select:9 -> one row "alt-1…9", "tab.select:1…9".
 export function fold(list) {
