@@ -27,7 +27,7 @@ herdr-app check mods/<name>       # each mod you changed
 - The person installs this only on this Mac. Their Windows PC runs plain Herdr, and nothing is copied to other machines.
 - In a Herdr task, don't copy files into `~/.config/herdr-app`, switch layouts or drive the Herdr window: the Assistant installs the change after the person accepts it.
 - Saving a mod file in `~/.config/herdr-app` reloads every copy of that mod. Make all of a file's changes in one save.
-- Shepherdr's chat mod has local edits on this Mac so its mic works: `~/.config/herdr-app/mods/chat/record.ts` records with ffmpeg on macOS, and `mods/chat/dictate.js` has a changed whisper model path. They are edits to another project's installed mod, not part of this repo, and a Shepherdr update replaces them.
+- Shepherdr's chat mod has local edits on this Mac so its mic works: `~/.config/herdr-app/mods/chat/record.ts` records with ffmpeg on macOS, and `~/.config/herdr-app/mods/chat/dictate.js` has a changed whisper model path. They are edits to another project's installed mod, not part of this repo, and a Shepherdr update replaces them.
 
 ## Writing mod code
 
