@@ -458,7 +458,8 @@ export default class Spaces extends View {
             .when(on, el => el.bg(t.accent).text_color(t.accent_foreground))
             .when(!on, el => el.border(1).border_color(t.border).text_color(t.dim))
             .child(String(i + 1))))
-          .child(div().flex_shrink(0).max_w(room() * 7).truncate().text_color(t.foreground).child(w.name))
+          // A long name gives way to the close button instead of pushing it past the row's edge.
+          .child(div().min_w(0).max_w(room() * 7).truncate().text_color(t.foreground).child(w.name))
           .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())
           // A space with an agent working, waiting on you, or finished gets a square in that status color.
           .when(!tree && ["working", "blocked", "done"].includes(w.status), el => el.child(div().size(6).flex_none().ml(6).bg(tone(t, w.status))))
