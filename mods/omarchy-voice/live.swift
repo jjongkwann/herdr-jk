@@ -1,6 +1,8 @@
 // Live dictation for omarchy-voice (macOS 26+): listens to the default microphone and types what is
 // being said into a terminal as it is said, then lets whisper.cpp correct it.
 //   live <terminal> <cols> <rows> <wav> <words file> [<whisper-cli> <model>]
+// With "-" for the terminal, the text goes to <wav>.txt instead (replaced whole each time), for a
+// box that isn't a terminal (a chat's): omarchy-voice moves it from there.
 // While it runs, Apple's on-device dictation model (SpeechAnalyzer) writes the words down, in the
 // language macOS dictation is set to; each change is typed at once, taking back the letters that
 // changed. SIGTERM ends it: the last words go in, then, with whisper given, whisper.cpp writes the
@@ -14,8 +16,36 @@ import AVFAudio
 import Foundation
 import Speech
 
+// The text with its control characters as spaces: a line end or an escape from a model would reach a
+// program as Enter or a key, and could send the words off.
+func clean(_ text: String) -> String {
+  String(String.UnicodeScalarView(text.unicodeScalars.map { $0.value < 0x20 || (0x7f...0x9f).contains($0.value) ? " " : $0 }))
+}
+
+// Where the words go: `set` makes the text so far what's there, `close` ends it.
+protocol Sink: AnyObject, Sendable {
+  func set(_ text: String)
+  func close()
+}
+
+// A file that always holds the text so far.
+final class TextFile: Sink, @unchecked Sendable {
+  private let url: URL
+  private let lock = NSLock()
+
+  init(_ path: String) { url = URL(fileURLWithPath: path) }
+
+  func set(_ text: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    try? clean(text).write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  func close() {}
+}
+
 // The terminal's keyboard, and what has been typed into it so far.
-final class Typist: @unchecked Sendable {
+final class Typist: Sink, @unchecked Sendable {
   private let master: Int32
   private let attach = Process()
   private var typed: [Character] = []
@@ -49,13 +79,12 @@ final class Typist: @unchecked Sendable {
     }.start()
   }
 
-  // Makes the typed text `text`: backspaces over what differs, then the new end. Control characters
-  // become spaces: a line end or an escape from a model would reach the program as Enter or a key,
-  // and could send the words off. Keys written before hc is attached wait in the pty.
+  // Makes the typed text `text` (clean): backspaces over what differs, then the new end. Keys written
+  // before hc is attached wait in the pty.
   func set(_ text: String) {
     lock.lock()
     defer { lock.unlock() }
-    let new = Array(String(String.UnicodeScalarView(text.unicodeScalars.map { $0.value < 0x20 || (0x7f...0x9f).contains($0.value) ? " " : $0 })))
+    let new = Array(clean(text))
     var same = 0
     while same < typed.count, same < new.count, typed[same] == new[same] { same += 1 }
     let keys = String(repeating: "\u{7f}", count: typed.count - same) + String(new[same...])
@@ -134,8 +163,12 @@ struct Live {
     do {
       recording = try AVAudioFile(forWriting: wav, settings: kept.settings, commonFormat: .pcmFormatInt16, interleaved: false)
     } catch { quit("recording: \(error.localizedDescription)", 5) }
-    let typist: Typist
-    do { typist = try Typist(terminal: args[1], cols: cols, rows: rows) } catch { quit("terminal: \(error.localizedDescription)", 6) }
+    let typist: Sink
+    if args[1] == "-" {
+      typist = TextFile(args[4] + ".txt")
+    } else {
+      do { typist = try Typist(terminal: args[1], cols: cols, rows: rows) } catch { quit("terminal: \(error.localizedDescription)", 6) }
+    }
     let (inputs, feed) = AsyncStream<AnalyzerInput>.makeStream()
     Task {
       for await pcm in taps {

@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { exec, appHome, focused, notify, readTextFile, run, setShared, theme, nextCommand } from "herdr";
+import { exec, appHome, focused, notify, panes, readTextFile, run, setShared, shared, terminals, theme, nextCommand } from "herdr";
 import { MAX_SECONDS, findTools, missing, buildLive, terminalSize, screenText, screenTerms, startLive, startRecording, stopRecording, cancelRecording, transcribe, saveClipboard, restoreClipboard, writeClipboard } from "./voice.js";
 
 // Push-to-talk dictation for any terminal: `omarchy-voice.toggle` starts recording, the next one
@@ -24,6 +24,10 @@ const WORDS = () => `${DIR()}/words.txt`;
 const EXPECTED = () => `${FILE()}.words`;
 // Shared with omarchy-voice-live: "listening", "writing" (whisper at work), or null.
 const STATE = "omarchy-voice.state";
+// The chat mod's door for words from outside: { pane, text, fill: true } here, then chat.send,
+// puts text in that chat's box (mods/chat/main.js). Its drafts: data/chat-drafts/<agent>.json.
+const CHAT_REQUEST = () => `${appHome()}/data/chat-sendreq.json`;
+const CHAT_DRAFTS = () => `${appHome()}/data/chat-drafts`;
 // How long whisper may take to correct a live dictation, in seconds.
 const CORRECTING = 120;
 const RED = "#ff5d6c";
@@ -50,6 +54,14 @@ export default class OmarchyVoice extends View {
         if ((await nextCommand()) === "toggle") this.toggle(cx);
         cx.notify();
       }
+    });
+    // Into a chat: its box follows the helper's words.
+    this.chat = null;
+    this.relaying = false;
+    cx.timer.every(150, () => {
+      if (!this.chat || this.relaying || (this.state !== "recording" && this.state !== "writing")) return;
+      this.relaying = true;
+      this.relay().catch(() => null).finally(() => { this.relaying = false; });
     });
     cx.timer.every(1000, (cx) => {
       if (this.state !== "recording") return;
@@ -79,18 +91,30 @@ export default class OmarchyVoice extends View {
     this.stopWhenStarted = false;
     setShared(STATE, "listening");
     cx.notify();
-    // Typing as it goes, when the live helper is there and a terminal is focused to type into: the
-    // helper starts as soon as the terminal's size is known, with the tools found last time (this.tools,
-    // from init); the terms it should expect are gathered while it already listens.
-    const terminal = this.live && focused()?.terminal;
+    // Typing as it goes, when the live helper is there and a terminal or a chat is focused to type
+    // into: the helper starts as soon as the terminal's size (or the chat's draft) is known, with
+    // the tools found last time (this.tools, from init); the terms it should expect are gathered
+    // while it already listens. Into a chat, the helper keeps the words in a file and the chat's box
+    // gets them from here (relay()).
+    const f = focused();
+    const terminal = this.live && f?.terminal;
+    const chat = this.live && !f?.terminal && panes().find((p) => p.pane === f?.pane)?.mod === "chat" ? f.pane : null;
     this.started = Date.now();
+    this.chat = null;
     const size = terminal ? await terminalSize(exec, terminal) : null;
-    this.typing = Boolean(size);
     let trouble;
-    if (this.typing) {
+    if (size) {
+      this.typing = true;
       this.expect(terminal);
       trouble = await startLive(exec, this.live, FILE(), terminal, size, EXPECTED(), this.tools).catch((e) => String(e?.message ?? e));
+    } else if (chat) {
+      this.typing = true;
+      const { agent, key } = this.chatAgent(f, chat);
+      this.chat = { pane: chat, before: await this.draft(key), sent: null };
+      if (agent) this.expect(agent);
+      trouble = await startLive(exec, this.live, FILE(), "-", { cols: 0, rows: 0 }, EXPECTED(), this.tools).catch((e) => String(e?.message ?? e));
     } else {
+      this.typing = false;
       const tools = await findTools(exec, MODELS());
       const lack = missing(tools, MODELS());
       if (lack) {
@@ -104,6 +128,7 @@ export default class OmarchyVoice extends View {
     }
     if (trouble) {
       this.state = "idle";
+      this.chat = null;
       setShared(STATE, null);
       say(trouble, "error", 10000);
       return;
@@ -113,6 +138,43 @@ export default class OmarchyVoice extends View {
     this.state = "recording";
     if (!this.typing) this.started = Date.now();
     if (this.stopWhenStarted) await this.finish(cx);
+  }
+
+  // The agent a chat pane talks to, and the key its drafts go under, as the chat works them out
+  // (mods/chat/main.js: a terminal labelled herdr.chat=<pane>, or an Assistant's slot in shared
+  // "coordinator.slots"; the key is herdr.chat.origin, else slot:<slot>, else the address).
+  chatAgent(f, pane) {
+    const labelled = terminals().find((t) => t.labels?.["herdr.chat"] === pane);
+    const address = labelled?.address ?? f?.agent ?? null;
+    const term = labelled ?? terminals().find((t) => t.address === address);
+    const slot = Object.entries(shared("coordinator.slots") ?? {}).find(([, r]) => r?.pane === pane)?.[0];
+    return { agent: address, key: term?.labels?.["herdr.chat.origin"] || (slot ? `slot:${slot}` : null) || address };
+  }
+
+  // What the chat's box held when dictation started, from its draft (saved a moment after each
+  // change), with a space after it; "" when there is none. The words go after it.
+  async draft(key) {
+    if (!key) return "";
+    const saved = await readTextFile(`${CHAT_DRAFTS()}/${String(key).replace(/[^\w.-]/g, "_")}.json`).catch(() => null);
+    let text = "";
+    try { text = String(JSON.parse(saved ?? "{}").text ?? ""); } catch {}
+    return text && !/\s$/.test(text) ? `${text} ` : text;
+  }
+
+  // Puts the words the helper has so far (its file) into the chat's box, after what was there.
+  async relay() {
+    const c = this.chat;
+    const text = (await readTextFile(`${FILE()}.txt`).catch(() => null)) ?? "";
+    if (!c || text === c.sent) return;
+    c.sent = text;
+    await this.fill(c, text);
+  }
+
+  // The chat's box becomes what it held plus `text` (the chat replaces its box with it, cursor at the end).
+  async fill(c, text) {
+    await exec("sh", ["-c", 'printf %s "$2" > "$1.tmp" && mv -f "$1.tmp" "$1"', "x", CHAT_REQUEST(),
+      JSON.stringify({ pane: c.pane, text: c.before + text, fill: true })]);
+    run("chat.send");
   }
 
   // Writes the terms whisper should expect for this dictation: the person's list, then the ones on
@@ -130,7 +192,21 @@ export default class OmarchyVoice extends View {
     let keep = false;
     try {
       // The live helper has typed the words; it ends once whisper has corrected them.
-      if (this.typing) return await stopRecording(exec, FILE(), CORRECTING);
+      if (this.typing) {
+        await stopRecording(exec, FILE(), CORRECTING);
+        const c = this.chat;
+        if (c) {
+          // whisper's text. The chat takes one request at a time and may have dropped one written
+          // while it read the one before; sent twice, the last one sticks.
+          const text = (await readTextFile(`${FILE()}.txt`).catch(() => null)) ?? "";
+          if (text !== c.sent) {
+            await this.fill(c, text);
+            await exec("sleep", ["0.4"]);
+            await this.fill(c, text);
+          }
+        }
+        return;
+      }
       await stopRecording(exec, FILE());
       const { text, error } = await transcribe(exec, this.tools, FILE());
       if (error) {
@@ -144,8 +220,9 @@ export default class OmarchyVoice extends View {
       say(`Dictation failed: ${e?.message ?? e}`);
     } finally {
       this.state = "idle";
+      this.chat = null;
       setShared(STATE, null);
-      exec("rm", ["-f", FILE(), `${FILE()}.log`, EXPECTED()]).catch(() => null);
+      exec("rm", ["-f", FILE(), `${FILE()}.log`, `${FILE()}.txt`, EXPECTED()]).catch(() => null);
     }
   }
 
