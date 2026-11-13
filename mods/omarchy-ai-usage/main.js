@@ -14,15 +14,20 @@ const STALE = 12 * 60e3;
 const AMBER = "#ffb347", RED = "#ff5d6c";
 const POPUP_W = 320, GAP = 6;
 
+// Sources with a request in flight. Module scope is shared by every copy (the bar and its popup),
+// so ticks and Refresh clicks during a slow request don't stack more requests on that provider.
+const refreshing = new Set();
+
 async function refreshOne(src) {
-  if (!src.provider) return;
+  if (!src.provider || refreshing.has(src.id)) return;
+  refreshing.add(src.id);
   const prev = shared(keyOf(src.id)) ?? {};
   const now = new Date().toISOString();
   try {
     setShared(keyOf(src.id), { checked: now, fetched: now, error: null, windows: await fetchUsage(src) });
   } catch (e) {
     setShared(keyOf(src.id), { ...prev, checked: now, error: String(e?.message ?? e) });
-  }
+  } finally { refreshing.delete(src.id); }
 }
 
 const shownList = () => shared(SHOWN)?.list ?? [];
@@ -47,7 +52,8 @@ export default class AiUsage extends View {
     if (props()?.overlay) return;
     this.sig = null;
     this.claudeEnv = {};
-    cx.timer.every(60e3, cx => { cx.spawn(async () => refreshAll()); cx.notify(); });
+    // Redraw before any fetch, so times and stale greys update even while a quota request is still pending.
+    cx.timer.every(60e3, cx => { cx.notify(); cx.spawn(async () => refreshAll()); });
     // A start or a reload of this mod fetches at once, so a change shows without waiting for the 5-minute cycle.
     cx.spawn(async () => refreshAll(true));
   }
