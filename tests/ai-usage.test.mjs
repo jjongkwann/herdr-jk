@@ -17,9 +17,10 @@ function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/
     setShared: (key, value) => state.set(key, value),
     fetch: async (url, options) => {
       requests.push({ url, ...options });
-      // A promise stands for a request still in flight.
-      if (typeof response?.then === 'function') return response;
-      return { ok: status === 200, status, json: async () => response };
+      // A function answers per URL; a promise stands for a request still in flight.
+      const body = typeof response === 'function' ? response(url) : response;
+      if (typeof body?.then === 'function') return body;
+      return { ok: status === 200, status, json: async () => body };
     },
   };
   const providerSource = readFileSync(new URL('../mods/omarchy-ai-usage/providers.js', import.meta.url), 'utf8')
@@ -28,8 +29,8 @@ function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/
   Object.assign(dependencies, providers);
   const source = readFileSync(new URL('../mods/omarchy-ai-usage/main.js', import.meta.url), 'utf8')
     .replace(/^import .*;\n/gm, '').replace('export default class', 'class');
-  const { refreshOne, AiUsage } = Function(...Object.keys(dependencies), `${source}\nreturn { refreshOne, AiUsage };`)(...Object.values(dependencies));
-  return { state, requests, route: (value, directory = null) => providers.sourcesFor(value, async () => directory), always: providers.alwaysSources, refreshOne, AiUsage };
+  const { refreshOne, refreshAll, AiUsage } = Function(...Object.keys(dependencies), `${source}\nreturn { refreshOne, refreshAll, AiUsage };`)(...Object.values(dependencies));
+  return { state, requests, route: (value, directory = null) => providers.sourcesFor(value, async () => directory), always: providers.alwaysSources, refreshOne, refreshAll, AiUsage };
 }
 
 // Starts the bar the way Herdr does, with a cx that keeps the 60-second tick and counts redraws.
@@ -258,5 +259,56 @@ test('each 60-second tick redraws while a quota request is still pending', async
   } finally {
     resolveQuota(copilotReply);
     await Promise.all(bar.tasks);
+  }
+});
+
+test('periodic ticks keep refreshing and redrawing while a forced Copilot fetch hangs', async () => {
+  const originalNow = Date.now, start = Date.now();
+  let now = start, codexUsed = 25, resolveCopilot;
+  Date.now = () => now;
+  const copilotPending = new Promise(resolve => { resolveCopilot = resolve; });
+  const h = usageHarness({ ...copilotLogin, '/home/test/.codex/auth.json': { tokens: { access_token: 'codex-token', account_id: 'account' } } },
+    url => url.includes('github') ? copilotPending
+      : { rate_limit: { primary_window: { limit_window_seconds: 18000, used_percent: codexUsed, reset_at: 1800000000 } } });
+  h.state.set('omarchy-ai-usage.shown', { list: [codex, copilot], idle: false });
+  const copilotRequests = () => h.requests.filter(r => r.url.includes('github')).length;
+  const codexShown = () => h.state.get('omarchy-ai-usage.codex')?.windows?.[0]?.used;
+  const bar = mount(h);
+  let forced;
+  try {
+    await settle(() => codexShown() === 25);
+    assert.equal(copilotRequests(), 1, 'the fetch on load waits on Copilot');
+
+    // The popup's Refresh forces every source again.
+    codexUsed = 50;
+    forced = h.refreshAll(true);
+    await settle(() => codexShown() === 50);
+    assert.equal(codexShown(), 50);
+    assert.equal(copilotRequests(), 1, 'Refresh does not send a second Copilot request while one is pending');
+
+    now = start + 13 * 60_000;
+    codexUsed = 72;
+    bar.tick();
+    assert.equal(bar.notifications, 1, 'the timer notifies before periodic work');
+    await settle(() => codexShown() === 72);
+    assert.equal(codexShown(), 72, 'the tick refreshes Codex while Copilot is still pending');
+    assert.equal(copilotRequests(), 1, 'the pending Copilot request is deduplicated');
+
+    now += 60_000;
+    bar.tick();
+    assert.equal(bar.notifications, 2, 'later ticks still notify while forced Copilot work is pending');
+    await settle();
+    assert.equal(copilotRequests(), 1);
+
+    // Once Copilot answers, its next refresh goes out again.
+    resolveCopilot(copilotReply);
+    await Promise.all([...bar.tasks, forced]);
+    assert.ok(h.state.get('omarchy-ai-usage.copilot').fetched);
+    await h.refreshAll(true);
+    assert.equal(copilotRequests(), 2);
+  } finally {
+    resolveCopilot(copilotReply);
+    await Promise.all([...bar.tasks, forced]);
+    Date.now = originalNow;
   }
 });
