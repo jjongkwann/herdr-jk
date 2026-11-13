@@ -1,13 +1,24 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { H, DAY } from '../mods/omarchy-ai-usage/time.js';
 
-function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/test') {
+// `system.platform` is what Herdr's os.platform() says ("linux" unless given); `system.security`
+// answers each `security` call with an { code, stdout } (or throws, as exec does when it can't run).
+function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/test', system = {}) {
   const state = new Map();
   const requests = [];
+  const commands = [];
   const dependencies = {
     View: class {},
+    createHash,
+    platform: () => system.platform ?? 'linux',
+    exec: async (command, args) => {
+      commands.push([command, ...args]);
+      if (command !== '/usr/bin/security' || !system.security) throw new Error(`${command}: not found`);
+      return { stderr: '', ...system.security(args) };
+    },
     home: () => homeDir,
     appHome: () => `${homeDir}/.config/herdr-app`,
     settings: () => ({}),
@@ -30,7 +41,7 @@ function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/
   const source = readFileSync(new URL('../mods/omarchy-ai-usage/main.js', import.meta.url), 'utf8')
     .replace(/^import .*;\n/gm, '').replace('export default class', 'class');
   const { refreshOne, refreshAll, AiUsage } = Function(...Object.keys(dependencies), `${source}\nreturn { refreshOne, refreshAll, AiUsage };`)(...Object.values(dependencies));
-  return { state, requests, route: (value, directory = null) => providers.sourcesFor(value, async () => directory), always: providers.alwaysSources, refreshOne, refreshAll, AiUsage };
+  return { state, requests, commands, route: (value, directory = null) => providers.sourcesFor(value, async () => directory), always: providers.alwaysSources, refreshOne, refreshAll, AiUsage };
 }
 
 // Starts the bar the way Herdr does, with a cx that keeps the 60-second tick and counts redraws.
@@ -134,6 +145,82 @@ test('Claude account routing keeps work and personal sources separate', async ()
   const [personal] = await h.route(agent('claude-code'), '/home/test/.claude-personal');
   assert.equal(personal.id, 'claude.personal');
   assert.equal(personal.from.claude, '/home/test/.claude-personal');
+});
+
+const fileLogin = (accessToken, expiresAt) => ({ '/home/test/.claude/.credentials.json': { claudeAiOauth: { accessToken, expiresAt } } });
+const keychain = (accessToken, expiresAt) => ({ code: 0, stdout: `${JSON.stringify({ claudeAiOauth: { accessToken, expiresAt } })}\n` });
+const mac = security => ({ platform: 'macos', security });
+const session = { limits: [{ kind: 'session', percent: 10, resets_at: 'later' }] };
+
+test('on macOS Claude uses the Keychain login when it runs out after the file', async () => {
+  const h = usageHarness(fileLogin('file-token', Date.now() - H), session, 200, '/home/test', mac(() => keychain('keychain-token', Date.now() + H)));
+  await h.refreshOne(claude);
+  assert.equal(h.requests[0]?.headers.Authorization, 'Bearer keychain-token');
+  assert.equal(h.state.get('omarchy-ai-usage.claude.claude').error, null);
+  // One read per refresh, of ~/.claude's own item.
+  assert.deepEqual(h.commands, [['/usr/bin/security', 'find-generic-password', '-s', 'Claude Code-credentials', '-w']]);
+  const saved = JSON.stringify([...h.state]);
+  assert.ok(!saved.includes('keychain-token') && !saved.includes('file-token'));
+});
+
+test('on macOS Claude keeps the file login when it runs out after the Keychain one', async () => {
+  const h = usageHarness(fileLogin('file-token', Date.now() + 2 * H), session, 200, '/home/test', mac(() => keychain('keychain-token', Date.now() + H)));
+  await h.refreshOne(claude);
+  assert.equal(h.requests[0]?.headers.Authorization, 'Bearer file-token');
+});
+
+test('a Keychain that fails, refuses or holds junk counts as no login, and the file stands in', async () => {
+  const answers = [
+    () => { throw new Error('exec timed out'); },
+    () => ({ code: 44, stdout: '' }),
+    () => ({ code: 128, stdout: '' }),
+    () => ({ code: 0, stdout: 'not json synthetic-secret' }),
+  ];
+  for (const answer of answers) {
+    const h = usageHarness(fileLogin('file-token', Date.now() + H), session, 200, '/home/test', mac(answer));
+    await h.refreshOne(claude);
+    assert.equal(h.requests[0]?.headers.Authorization, 'Bearer file-token');
+  }
+  // Neither has one: the usual missing-login error, with nothing of the Keychain's output in it.
+  const h = usageHarness({}, session, 200, '/home/test', mac(() => ({ code: 0, stdout: '{"claudeAiOauth": synthetic-secret' })));
+  await h.refreshOne(claude);
+  assert.equal(h.state.get('omarchy-ai-usage.claude.claude').error, 'no Claude Code login in ~/.claude');
+  assert.equal(h.requests.length, 0);
+});
+
+test('off macOS Claude reads only the file and never runs security', async () => {
+  for (const platform of ['linux', 'windows']) {
+    const h = usageHarness(fileLogin('file-token', Date.now() + H), session, 200, '/home/test', { platform, security: () => keychain('keychain-token', Date.now() + 2 * H) });
+    await h.refreshOne(claude);
+    assert.equal(h.requests[0]?.headers.Authorization, 'Bearer file-token');
+    assert.equal((await h.always([{ key: 'claude', name: 'claude', icon: null, tint: false }])).length, 1);
+    assert.deepEqual(h.commands, []);
+  }
+});
+
+test('another Claude profile reads the Keychain item Claude Code names after its folder', async () => {
+  const services = [];
+  const h = usageHarness({}, session, 200, '/home/test', mac(args => { services.push(args[2]); return keychain('profile-token', Date.now() + H); }));
+  await h.refreshOne({ ...claude, id: 'claude.personal', from: { claude: '/home/test/.claude-personal' } });
+  // A folder name in decomposed Unicode hashes as its composed (NFC) form, as Claude Code does.
+  await h.refreshOne({ ...claude, id: 'claude.e', from: { claude: '/home/test/.claude-é' } });
+  assert.deepEqual(services, ['Claude Code-credentials-3c951c30', 'Claude Code-credentials-237ea4bf']);
+  assert.equal(h.requests[0]?.headers.Authorization, 'Bearer profile-token');
+});
+
+test('on macOS a profile whose login is only in the Keychain is shown, found without reading its secret', async () => {
+  const items = new Set(['Claude Code-credentials', 'Claude Code-credentials-3c951c30']);
+  const h = usageHarness({}, {}, 200, '/home/test', mac(args => ({ code: items.has(args[2]) ? 0 : 44, stdout: '' })));
+  const programs = [{ key: 'claude', name: 'claude', icon: null, tint: false }];
+  assert.deepEqual((await h.always(programs)).map(s => s.id), ['claude.claude', 'claude.personal']);
+  assert.ok(h.commands.length && h.commands.every(c => !c.includes('-w')), 'finding a login never asks for the secret');
+  const asked = h.commands.length;
+  assert.deepEqual((await h.route(agent('claude-code'))).map(s => s.id), ['claude.claude', 'claude.personal']);
+  assert.equal(h.commands.length, asked, 'a tab switch soon after asks the Keychain nothing new');
+  // No item for the profile: left out, as with no file.
+  const none = usageHarness({}, {}, 200, '/home/test', mac(() => ({ code: 44, stdout: '' })));
+  assert.deepEqual((await none.route(agent('claude-code'))).map(s => s.id), ['claude.claude']);
+  assert.deepEqual(await none.always(programs), []);
 });
 
 test('Pi shares Codex login only when account IDs match', async () => {
