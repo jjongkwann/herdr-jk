@@ -39,6 +39,8 @@ These upstream features were merged by the recent tasks and fitted to the change
 - **Resizable sidebar lists.** Drag the gap between spaces and agents to give one more room; each stays at least 90px tall.
 - **Agent × at the row's end.** A hovered agent row shows its × at the right end, after the status dot, as a space row does.
 - **AI usage fixes.** Claude profile names from `settings.json`'s `claude_labels` are found again, the bar keeps redrawing while a quota request is slow, and each provider has at most one request in flight.
+- **Compact tabs.** Tabs share the strip's width and shrink from 190px toward 84px before the strip scrolls. The active tab keeps a little more room for its ×, a narrow tab drops its icons, and the status word is in the tab's tooltip; the dot and spinner stay.
+- **Draggable top bar.** Drag any empty part of the top bar, the AI usage block included, to move the window. A click on the usage meters still opens their popup, and the space numbers and buttons still take their clicks.
 
 ### Mods it expects
 
