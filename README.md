@@ -18,7 +18,7 @@ The repo holds the `omarchy` layout and its `omarchy-*` mods. Terminals and codi
 
 - **Chat | Terminal switch.** With [Shepherdr](https://github.com/eliasstravik/shepherdr)'s chat mod installed, Claude Code and Codex pane headers get a Chat | Terminal switch; `super-ctrl-c` switches the focused pane. A chat pane shows its agent's name, folder and status, and the sidebar and tab strip still count an agent while it is shown as Chat. Pane widths stay the same across the switch. A space's Assistant tab opens in Terminal view: once it has been on screen for two seconds, an Assistant chat with no agent yet starts its agent and the header shows that agent's terminal.
 - **Voice dictation.** `super-ctrl-v` dictates into the focused terminal or Shepherdr chat box, typing the words while you speak. See [Voice dictation](#voice-dictation).
-- **One shared browser (`omarchy-browser`).** Agents drive one persistent browser with the mod's `ab` script, and the tab strip's Browser button opens it as a split to the right of the focused pane. It runs on herdr-app's own task browser (session `herdr-omarchy`, profile `~/.herdr/browser/omarchy`), so sign-ins persist. It needs agent-browser and herdr-app's browser viewer; without them the button says what is missing.
+- **One shared browser (`omarchy-browser`).** Agents drive one persistent browser with the mod's `ab` script, and the tab strip's Browser button opens it as a split to the right of the focused pane. It runs on herdr-app's own task browser (session `herdr-omarchy`, profile `~/.herdr/browser/omarchy`), so sign-ins persist. It needs agent-browser and herdr-app's browser viewer; without them the button says what is missing. While the Browser pane is on screen, its header shows how many errors the page has had since it loaded (console errors, uncaught exceptions, failed loads, as DevTools counts them); a click lists the latest ones.
 - **Wallpaper picker.** `super-ctrl-b` picks any wallpaper from any theme. Changing the theme keeps the wallpaper, and `super-ctrl-w` cycles the current theme's wallpapers.
 - **See-through panes.** Terminals draw at 70% opacity over the wallpaper, tiles and panes have a 12px radius, and the gaps are 8px.
 - **AI usage always shows Claude, Codex and Antigravity**, in that order, when this machine has their login; agents in the focused tab follow them. Antigravity's quota comes from the file its statusline saves, without a network call. On macOS, Claude's login is read from the Keychain, where Claude Code keeps it fresh.
@@ -65,7 +65,7 @@ The agent copies the layout, mods, themes and wallpapers into `~/.config/herdr-a
 > - `omarchy-spaces`, `omarchy-files` and `omarchy-changes` run `git` in your folders. The commit graph in `omarchy-changes` also runs `find` to look for repos in a folder that is not one.
 > - `omarchy-tabs` and `omarchy-pane` run `python3` to read and restore pane trees and sizes.
 > - `omarchy-voice` records the microphone. It builds its live helper with `swiftc`, and runs `whisper-cli`, `ffmpeg`, `hc` and `osascript` (to save and restore the clipboard). Everything stays on this computer.
-> - `omarchy-browser` runs herdr-app's `bin/herdr-browser` and its viewer.
+> - `omarchy-browser` runs herdr-app's `bin/herdr-browser` and its viewer. `omarchy-pane` runs `node` (`omarchy-browser/page.mjs`) every 4 seconds while the Browser pane is on screen, to read the page's errors from Chrome's local debugging port.
 > - `omarchy-mod-manager` searches GitHub for mods. It runs `git` and `gh` to download and install them.
 
 ## Voice dictation

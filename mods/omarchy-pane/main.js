@@ -18,13 +18,18 @@
 // ends the agent after asking. "omarchy-pane.toggle" switches the focused pane.
 // A space's Assistant tab opens in Terminal view: its chat with no agent yet, once shown, has
 // Shepherdr's chat start the agent, then swaps to its terminal (assistant.js).
+// The omarchy browser's pane (omarchy-browser's view.sh) says "Browser" and the page's address, and
+// shows how many errors the page has had since it loaded, looked at every few seconds while the
+// pane is on screen (viewer.js, omarchy-browser/page.mjs); a click lists the latest in a popup
+// (this mod again, with props { popup: "errors", page }).
 // Adapted from Shepherdr's pane-chat (MIT, see NOTICE).
 
 import { View, div, svg, image } from "gpui-kit";
-import { h_flex, InputState, Input } from "gpui-base";
-import { panes, terminals, spaces, machines, props, run, theme, home, exec, hc, notify, nextCommand, readTextFile, appHome, layout, shared, setShared, window } from "herdr";
+import { h_flex, v_flex, InputState, Input } from "gpui-base";
+import { panes, terminals, spaces, machines, props, run, theme, home, exec, hc, notify, nextCommand, readTextFile, appHome, layout, shared, setShared, window, openOverlay } from "herdr";
 import { act, readLive, watchLive, touches } from "./browser/client.js";
 import { assistantStep, slotOf } from "./assistant.js";
+import { isViewer, onScreen, errorLabel, pageShown, errorsPopup } from "./viewer.js";
 
 const CHAT = "chat";
 const LABEL = "herdr.chat";
@@ -138,8 +143,18 @@ function openOutside(url) {
 
 const BROWSER = "mods/omarchy-pane/browser";
 
+// The omarchy browser's page, asked through omarchy-browser/page.mjs: its JSON answer, or null.
+const PAGE = () => `${appHome()}/mods/omarchy-browser/page.mjs`;
+const PAGE_MS = 4000;
+async function pageCall(cmd) {
+  const r = await exec("sh", ["-c", 'PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"; exec node "$0" "$1"', PAGE(), cmd], { timeout: 30000 }).catch(() => null);
+  try { return r ? JSON.parse(r.stdout) : null; } catch { return null; }
+}
+
 export default class Pane extends View {
   init(_props, cx) {
+    // The error list's popup: it only draws what it was given.
+    if (props()?.popup === "errors") return;
     this.hovered = false;
     this.terminal = props()?.terminal || null;
     this.live = null;
@@ -185,6 +200,9 @@ export default class Pane extends View {
       cx.notify();
     });
     if (!this.terminal) return;
+    // The omarchy browser's pane: its page's errors, looked at while the pane is on screen.
+    this.page = null;
+    cx.timer.every(PAGE_MS, (cx) => this.lookAtPage(cx));
     cx.spawn(async (cx) => { await this.reload(cx); });
     watchLive(cx, this, async (changed, cx) => {
       if (touches(changed, this.terminal)) await this.reload(cx);
@@ -257,6 +275,51 @@ export default class Pane extends View {
     const before = this.before || { hidden: true, active: "files" };
     if (before.active !== "browser-notes") run("layout.select", { stack: "panel-body", child: before.active });
     if (before.hidden) run("layout.hide", { id: "panel" });
+  }
+
+  // The core terminal when this pane is the omarchy browser's viewer, else null.
+  viewer(self) {
+    const k = self?.terminal ? terminals().find((x) => x.address === self.terminal) : null;
+    return isViewer(k) ? k : null;
+  }
+
+  // The omarchy browser's page, looked at again (only while this pane is on screen): its address
+  // and its errors since it loaded. Redraws only when something changed.
+  lookAtPage(cx) {
+    const self = this.me();
+    if (this.looking || !this.viewer(self) || !onScreen(self, spaces(), panes())) return;
+    this.looking = true;
+    cx.spawn(async (cx) => {
+      const page = await pageCall("errors");
+      this.looking = false;
+      const next = page?.open ? page : null;
+      if (JSON.stringify(next) !== JSON.stringify(this.page)) { this.page = next; cx.notify(); }
+    });
+  }
+
+  // The page's error count; a click lists the latest ones in a popup under the pointer.
+  errorBadge(t, pane) {
+    const page = this.page;
+    const bad = page.count > 0;
+    return h_flex()
+      .id(`ph-errors-${pane}`)
+      .h(20)
+      .px(8)
+      .flex_none()
+      .items_center()
+      .rounded(0)
+      .border_1()
+      .cursor_pointer()
+      .text_size(11)
+      .when(bad, (e) => e.bg(t.blocked + "26").border_color(t.blocked + "66").text_color(t.blocked).font_semibold().hover((s) => s.bg(t.blocked + "40")))
+      .when(!bad, (e) => e.border_color(t.border).text_color(t.dim).hover((s) => s.bg(t.foreground + "14").text_color(t.foreground)))
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        const lines = page.errors?.length ?? 0;
+        openOverlay({ mod: "omarchy-pane", props: { popup: "errors", page }, kind: "popup", width: 560, height: Math.min(360, 84 + lines * 56) });
+      })
+      .tooltip(bad ? "Show the latest errors" : "Errors since the page loaded")
+      .child(bad ? errorLabel(page.count) : "No errors");
   }
 
   // Terminal → Chat: the chat takes this agent pane's spot.
@@ -545,8 +608,39 @@ export default class Pane extends View {
           .when(!this.alone(p), (e) => e.child(this.button(t, `ph-z-${pane}`, "zoom", "pane.zoom", { pane })))));
   }
 
+  // The popup the error count opens: the page's latest errors, a box each (Esc or a click beside it closes it).
+  errorsPopup(t) {
+    const info = errorsPopup(props().page);
+    return v_flex()
+      .id("ph-errors-popup")
+      .size_full()
+      .p(12)
+      .gap(8)
+      .bg(t.popover)
+      .text_size(12)
+      .child(div().flex_none().truncate().font_semibold().text_size(13).text_color(t.foreground).child(info.title))
+      .when(Boolean(info.note), (el) => el.child(div().flex_none().text_color(t.dim).child(info.note)))
+      .child(v_flex()
+        .id("ph-errors-list")
+        .flex_1()
+        .min_h(0)
+        .gap(6)
+        .overflow_y_scrollbar()
+        .children(info.lines.map((line, i) => div()
+          .id(`ph-error-${i}`)
+          .flex_none()
+          .px(8)
+          .py(6)
+          .border_l(2)
+          .border_color(t.blocked)
+          .bg(t.blocked + "14")
+          .text_color(t.foreground)
+          .child(line))));
+  }
+
   render(cx) {
     const t = theme();
+    if (props()?.popup === "errors") return this.errorsPopup(t);
     const self = this.me();
     if (!self) return div();
     if (this.live && self.terminal === this.terminal) return this.browserHeader(t, self);
@@ -556,12 +650,21 @@ export default class Pane extends View {
     const entry = chatMode ? agentEntry(self.pane) : null;
     const agent = entry?.address ?? null;
     const p = entry ? parked(entry) : self;
+    const viewer = chatMode ? null : this.viewer(self);
+    if (viewer) {
+      // Back on screen: look at the page now rather than at the next tick.
+      const on = onScreen(self, spaces(), panes());
+      if (on && !this.onScreen) cx.timer.after(0, (cx) => this.lookAtPage(cx));
+      this.onScreen = on;
+    }
+    const page = viewer ? this.page : null;
     // The icon names the program; the header says what it works on: its title, else the folder.
     const clean = (p.title ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
     // A shell's title is often just its terminal address ("t4c"), which says nothing either.
     const own = clean && clean !== p.program?.name && clean !== "Claude Code" && clean !== p.terminal ? clean : "";
-    const name = chatMode && !agent ? "Chat" : own || folder(p.cwd).split(/[\\/]/).filter(Boolean).pop() || p.program?.name || "shell";
-    const pic = icon(p.program, 14, t.dim);
+    const name = viewer ? "Browser" : chatMode && !agent ? "Chat" : own || folder(p.cwd).split(/[\\/]/).filter(Boolean).pop() || p.program?.name || "shell";
+    const pic = viewer ? svg(`${BROWSER}/globe.svg`).size(14).flex_none().text_color(t.dim) : icon(p.program, 14, t.dim);
+    const where = page ? pageShown(page.url) : folder(p.cwd) !== name ? folder(p.cwd) : "";
     const st = p.status;
     const pane = self.pane;
     const canSwitch = chatInstalled && (chatMode ? Boolean(agent) : chatty(self));
@@ -582,7 +685,7 @@ export default class Pane extends View {
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), (el) => el.child(pic))
       .child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name))
-      .child(div().flex_1().truncate().text_color(t.dim).child(folder(p.cwd) !== name ? folder(p.cwd) : ""))
+      .child(div().flex_1().truncate().text_color(t.dim).child(where))
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(0).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
       .when(st === "done", el => el.child(div().size(7).flex_none().rounded(0).bg(t.done)))
@@ -600,9 +703,10 @@ export default class Pane extends View {
           ? this.button(t, `ph-x-${pane}`, "close", null, null, () => { this.ending = true; }).tooltip(`End ${prog}`)
           : this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane }))
         .when(!this.alone(self), (e) => e.child(this.button(t, `ph-z-${pane}`, "zoom", "pane.zoom", { pane }))))
-      // After the hover buttons, so Chat | Terminal never moves under the pointer.
+      // After the hover buttons, so Chat | Terminal and the browser's tools never move under the pointer.
       .when(canSwitch, (el) => el.child(this.switcher(t, pane, chatMode,
         (cx) => this.toChat(self, cx),
-        (cx) => this.toTerminal(pane, cx))));
+        (cx) => this.toTerminal(pane, cx))))
+      .when(Boolean(page), (el) => el.child(this.errorBadge(t, pane)));
   }
 }
