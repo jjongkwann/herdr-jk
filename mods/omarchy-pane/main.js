@@ -22,20 +22,24 @@
 // shows how many errors the page has had since it loaded, looked at every few seconds while the
 // pane is on screen (viewer.js, omarchy-browser/page.mjs); a click lists the latest in a popup
 // (this mod again, with props { popup: "errors", page }). Saving a page file in the pane's space
-// folder reloads a local page (on by default; its header button turns it off for that pane).
+// folder reloads a local page (on by default; its header button turns it off for that pane). Its
+// DevTools button (or "omarchy-pane.devtools", a key) opens Chrome's DevTools for the page in a
+// pane below (omarchy-browser/devtools.mjs), or closes it.
 // Adapted from Shepherdr's pane-chat (MIT, see NOTICE).
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
-import { panes, terminals, spaces, machines, props, run, theme, home, exec, hc, notify, nextCommand, readTextFile, appHome, layout, shared, setShared, window, openOverlay, watchFolder } from "herdr";
+import { panes, terminals, spaces, machines, props, run, theme, home, exec, hc, notify, nextCommand, readTextFile, appHome, layout, shared, setShared, window, openOverlay, watchFolder, settings } from "herdr";
 import { act, readLive, watchLive, touches } from "./browser/client.js";
 import { assistantStep, slotOf } from "./assistant.js";
-import { isViewer, onScreen, errorLabel, pageShown, errorsPopup, saveFolder, reloads, Burst } from "./viewer.js";
+import { isViewer, kindOf, devtoolsArgv, devtoolsKeyPane, onScreen, errorLabel, pageShown, errorsPopup, saveFolder, reloads, Burst } from "./viewer.js";
 
 const CHAT = "chat";
 const LABEL = "herdr.chat";
 // When a toggle last swapped a pane (every copy of this build shares it).
 let lastSwap = 0;
+// When the DevTools key last opened or closed DevTools (every copy shares it).
+let lastDevtools = 0;
 // Whether Shepherdr's chat mod is installed, looked up once for every copy. Without it there
 // is no switch.
 let chatInstalled = false;
@@ -180,6 +184,11 @@ export default class Pane extends View {
         const c = await Promise.race([cmd, cx.sleep(5000)]);
         if (c === undefined) continue;
         cmd = null;
+        // The DevTools key: one header acts (devtoolsKey); a copy just started skips it, as below.
+        if (c === "devtools") {
+          if (Date.now() - this.born >= 2000 && Date.now() - lastDevtools >= 1000) this.devtoolsKey();
+          continue;
+        }
         const self = this.me();
         if (c !== "toggle" || !self?.focused || !chatInstalled) continue;
         if (Date.now() - this.born < 2000 || Date.now() - lastSwap < 3000) continue;
@@ -287,6 +296,65 @@ export default class Pane extends View {
   viewer(self) {
     const k = self?.terminal ? terminals().find((x) => x.address === self.terminal) : null;
     return isViewer(k) ? k : null;
+  }
+
+  // What a pane is to the browser: "viewer", "devtools" or null.
+  kind(p) {
+    return kindOf(p?.terminal ? terminals().find((x) => x.address === p.terminal) : null);
+  }
+
+  // The DevTools pane in this pane's tab, if one is open.
+  devtoolsPane(self) {
+    return panes().find((p) => p.tab === self.tab && this.kind(p) === "devtools") ?? null;
+  }
+
+  // DevTools below this Browser pane: opens it, or closes the one open in this tab. One open in
+  // another tab closes first: one DevTools browser serves one pane.
+  toggleDevtools(self) {
+    lastDevtools = Date.now();
+    const here = this.devtoolsPane(self);
+    if (here) { run("pane.close", { pane: here.pane }); return; }
+    for (const p of panes()) if (this.kind(p) === "devtools") run("pane.close", { pane: p.pane });
+    const s = settings();
+    run("pane.split", { direction: "down", pane: self.pane, argv: devtoolsArgv(appHome(), s.font_size, s.dark) });
+  }
+
+  // The DevTools key reaches every header: the one devtoolsKeyPane picks acts. On the Browser pane
+  // it opens or closes DevTools; on the DevTools pane it closes it.
+  devtoolsKey() {
+    const self = this.me();
+    if (!self || devtoolsKeyPane(panes(), spaces(), (p) => this.kind(p)) !== self.pane) return;
+    const kind = this.kind(self);
+    if (kind === "devtools") { lastDevtools = Date.now(); run("pane.close", { pane: self.pane }); }
+    else if (kind === "viewer") this.toggleDevtools(self);
+  }
+
+  // The Browser pane's DevTools button, filled while DevTools is open below it.
+  devtoolsButton(t, self) {
+    const open = Boolean(this.devtoolsPane(self));
+    return h_flex()
+      .id(`ph-devtools-${self.pane}`)
+      .h(20)
+      .px(6)
+      .gap(4)
+      .flex_none()
+      .items_center()
+      .rounded(0)
+      .border_1()
+      .border_color(t.border)
+      .text_size(11)
+      .cursor_pointer()
+      .when(open, (e) => e.bg(t.foreground + "2e").text_color(t.foreground))
+      .when(!open, (e) => e.text_color(t.dim))
+      .hover((s) => s.bg(t.foreground + "14").text_color(t.foreground))
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        this.toggleDevtools(self);
+        cx.notify();
+      })
+      .tooltip(open ? "Close DevTools" : "Open DevTools for this page below it")
+      .child(svg("mods/omarchy-pane/devtools.svg").size(12).flex_none())
+      .child("DevTools");
   }
 
   // The omarchy browser's page, looked at again (only while this pane is on screen): its address
@@ -724,6 +792,7 @@ export default class Pane extends View {
     const agent = entry?.address ?? null;
     const p = entry ? parked(entry) : self;
     const viewer = chatMode ? null : this.viewer(self);
+    const devtools = !chatMode && !viewer && this.kind(self) === "devtools";
     if (viewer) {
       // Back on screen: look at the page now rather than at the next tick.
       const on = onScreen(self, spaces(), panes());
@@ -737,9 +806,10 @@ export default class Pane extends View {
     const clean = (p.title ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
     // A shell's title is often just its terminal address ("t4c"), which says nothing either.
     const own = clean && clean !== p.program?.name && clean !== "Claude Code" && clean !== p.terminal ? clean : "";
-    const name = viewer ? "Browser" : chatMode && !agent ? "Chat" : own || folder(p.cwd).split(/[\\/]/).filter(Boolean).pop() || p.program?.name || "shell";
-    const pic = viewer ? svg(`${BROWSER}/globe.svg`).size(14).flex_none().text_color(t.dim) : icon(p.program, 14, t.dim);
-    const where = page ? pageShown(page.url) : folder(p.cwd) !== name ? folder(p.cwd) : "";
+    const name = viewer ? "Browser" : devtools ? "DevTools" : chatMode && !agent ? "Chat" : own || folder(p.cwd).split(/[\\/]/).filter(Boolean).pop() || p.program?.name || "shell";
+    const pic = viewer ? svg(`${BROWSER}/globe.svg`).size(14).flex_none().text_color(t.dim)
+      : devtools ? svg("mods/omarchy-pane/devtools.svg").size(14).flex_none().text_color(t.dim) : icon(p.program, 14, t.dim);
+    const where = page ? pageShown(page.url) : devtools ? "" : folder(p.cwd) !== name ? folder(p.cwd) : "";
     const st = p.status;
     const pane = self.pane;
     const canSwitch = chatInstalled && (chatMode ? Boolean(agent) : chatty(self));
@@ -783,6 +853,6 @@ export default class Pane extends View {
         (cx) => this.toChat(self, cx),
         (cx) => this.toTerminal(pane, cx))))
       .when(Boolean(page?.local), (el) => el.child(this.saveSwitch(t, pane, this.saveDir(self))))
-      .when(Boolean(page), (el) => el.child(this.errorBadge(t, pane)));
+      .when(Boolean(page), (el) => el.child(this.devtoolsButton(t, self)).child(this.errorBadge(t, pane)));
   }
 }

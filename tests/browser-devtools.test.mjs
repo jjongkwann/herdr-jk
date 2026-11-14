@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { isLocalUrl, activeTab, errorsFrom } from "../mods/omarchy-browser/page.mjs";
+import { inspectorUrl, viewport } from "../mods/omarchy-browser/devtools.mjs";
 import * as viewer from "../mods/omarchy-pane/viewer.js";
 
-const { isViewer, onScreen, errorLabel, pageShown, errorsPopup, saveFolder, reloads, Burst } = viewer;
+const { isViewer, isDevtools, kindOf, devtoolsArgv, devtoolsKeyPane, onScreen, errorLabel, pageShown, errorsPopup, saveFolder, reloads, Burst } = viewer;
 
 // ---- page.mjs ----
 
@@ -45,6 +46,27 @@ test("errors count console.error, failed asserts, uncaught exceptions and Chrome
   assert.deepEqual(errorsFrom([]), []);
 });
 
+// ---- devtools.mjs ----
+
+test("DevTools opens the frontend the page browser serves, for the page's target, on the Console", () => {
+  assert.equal(inspectorUrl("ws://127.0.0.1:51397/devtools/browser/abc", "T1"),
+    "http://127.0.0.1:51397/devtools/inspector.html?ws=127.0.0.1:51397/devtools/page/T1&panel=console");
+  assert.equal(inspectorUrl("", "T1"), null);
+  assert.equal(inspectorUrl("ws://127.0.0.1:1/devtools/browser/x", undefined), null);
+});
+
+test("the DevTools page is the pane's picture area in screen points", () => {
+  // Retina cells (16x34 device px for a 14 pt font): 143 x 40 cells is 1144 x 663 points.
+  assert.deepEqual(viewport(143, 40, { w: 16, h: 34 }, 14), { width: 1144, height: 663 });
+  // Cells in points (8x17) on a plain screen.
+  assert.deepEqual(viewport(143, 40, { w: 8, h: 17 }, 14), { width: 1144, height: 663 });
+  // Herdr zoomed in (bigger cells) still reads as Retina.
+  assert.deepEqual(viewport(100, 30, { w: 19, h: 41 }, 14), { width: 950, height: 594 });
+  // No answer to the cell-size question: the viewer's own guess, and never smaller than a usable page.
+  assert.deepEqual(viewport(100, 30, null, 14), { width: 900, height: 522 });
+  assert.deepEqual(viewport(10, 3, { w: 16, h: 34 }, 14), { width: 320, height: 200 });
+});
+
 // ---- viewer.js ----
 
 test("the viewer pane is view.sh, or herdr-browser-view on @omarchy only", () => {
@@ -55,6 +77,32 @@ test("the viewer pane is view.sh, or herdr-browser-view on @omarchy only", () =>
   assert.ok(!isViewer({ argv: ["sh", "/tmp/view.sh"] }));
   assert.ok(!isViewer({ argv: ["/bin/zsh", "-l"], foreground: { argv: ["nvim", "mods/omarchy-browser/view.sh.bak"] } }));
   assert.ok(!isViewer(null));
+});
+
+test("the DevTools pane is devtools.mjs, or the viewer on @omarchy-devtools", () => {
+  const argv = devtoolsArgv("/Users/me/.config/herdr-app", 14, true);
+  assert.deepEqual(argv.slice(3), ["/Users/me/.config/herdr-app/mods/omarchy-browser/devtools.mjs", "14", "dark"]);
+  assert.equal(devtoolsArgv("/a", undefined, false).at(-2), "14");
+  assert.equal(devtoolsArgv("/a", 13, false).at(-1), "light");
+  assert.ok(isDevtools({ argv }));
+  assert.ok(isDevtools({ foreground: { argv: ["node", "/x/bin/herdr-browser-view", "--task", "@omarchy-devtools"] } }));
+  assert.ok(!isDevtools({ argv: ["sh", "/x/mods/omarchy-browser/view.sh", ""] }));
+  assert.equal(kindOf({ argv }), "devtools");
+  assert.equal(kindOf({ argv: ["sh", "/x/mods/omarchy-browser/view.sh", ""] }), "viewer");
+  assert.equal(kindOf({ argv: ["/bin/zsh", "-l"] }), null);
+});
+
+test("the DevTools key goes to the focused Browser or DevTools pane, else the Browser pane on screen", () => {
+  const spaces = [{ id: "s1", active: true, tabs: [{ id: "a", active: true }, { id: "b", active: false }] }];
+  const kinds = { v1: "viewer", v2: "viewer", d1: "devtools" };
+  const kind = (p) => kinds[p.pane] ?? null;
+  const panes = (focused) => [
+    { pane: "v2", tab: "b" }, { pane: "sh", tab: "a" }, { pane: "v1", tab: "a" }, { pane: "d1", tab: "a" },
+  ].map((p) => ({ ...p, focused: p.pane === focused }));
+  assert.equal(devtoolsKeyPane(panes("sh"), spaces, kind), "v1", "the Browser pane on screen, not the one in a background tab");
+  assert.equal(devtoolsKeyPane(panes("d1"), spaces, kind), "d1");
+  assert.equal(devtoolsKeyPane(panes("v2"), spaces, kind), "v2");
+  assert.equal(devtoolsKeyPane([{ pane: "sh", tab: "a", focused: true }], spaces, kind), null);
 });
 
 test("a pane is on screen when its space and tab show and nothing else in its tab is zoomed", () => {
@@ -148,8 +196,8 @@ const byId = (tree, id) => walk(tree).find((n) => n.id === id);
 const texts = (tree) => walk(tree).flatMap((n) => n.kids.filter((k) => typeof k === "string"));
 const never = () => new Promise(() => {});
 
-function header({ panes, spaces, terminals, props, answers = [] }) {
-  const execs = [], overlays = [], timers = [], spawned = [], watches = [];
+function header({ panes, spaces, terminals, props, answers = [], born = 0 }) {
+  const execs = [], overlays = [], timers = [], spawned = [], watches = [], runs = [], commands = [];
   const cx = {
     notify() {}, stop_propagation() {}, sleep: never,
     spawn: (fn) => spawned.push(fn(cx)),
@@ -159,9 +207,9 @@ function header({ panes, spaces, terminals, props, answers = [] }) {
     View: class {}, div: el, svg: el, image: el, h_flex: el, v_flex: el,
     InputState: { new: () => ({ on() {}, set_value() {}, value: () => "", focus() {}, set_selected_range() {} }) }, Input: { new: el },
     panes: () => panes, spaces: () => spaces, terminals: () => terminals, machines: () => [], props: () => props,
-    run() {}, theme: () => new Proxy({}, { get: () => "#888888" }), home: () => "/Users/me", appHome: () => "/Users/me/.config/herdr-app",
+    run: (name, args) => runs.push([name, args]), settings: () => ({ font_size: 14, dark: true }), theme: () => new Proxy({}, { get: () => "#888888" }), home: () => "/Users/me", appHome: () => "/Users/me/.config/herdr-app",
     exec: async (cmd, args) => { execs.push([cmd, ...args]); return { code: 0, stdout: JSON.stringify(answers.shift() ?? { open: false }), stderr: "" }; },
-    hc: async () => ({ code: 0, stdout: "" }), notify() {}, nextCommand: never, readTextFile: async () => null, layout: () => ({}),
+    hc: async () => ({ code: 0, stdout: "" }), notify() {}, nextCommand: () => new Promise((resolve) => commands.push(resolve)), readTextFile: async () => null, layout: () => ({}),
     shared: () => undefined, setShared() {}, window: () => ({ platform: "macos" }), openOverlay: (spec) => { overlays.push(spec); return "o1"; },
     watchFolder: (dir) => new Promise((resolve) => watches.push({ dir, resolve })),
     act: async () => false, readLive: async () => null, watchLive() {}, touches: () => false, assistantStep: () => ({ do: "none", memo: {} }), slotOf: () => null,
@@ -170,7 +218,9 @@ function header({ panes, spaces, terminals, props, answers = [] }) {
   const body = readFileSync("mods/omarchy-pane/main.js", "utf8").replace(/^import [\s\S]*?;\n/gm, "").replace("export default class", "return class");
   const Pane = Function(...Object.keys(host), body)(...Object.values(host));
   const view = new Pane();
-  view.init(props, cx);
+  const realNow = Date.now;
+  Date.now = () => realNow() - born;
+  try { view.init(props, cx); } finally { Date.now = realNow; }
   // Lets started tasks run to their next wait (the command loop waits forever; it isn't awaited).
   const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
   // Runs the timers due now (after(0)) and the repeating ones, as Herdr would.
@@ -179,7 +229,9 @@ function header({ panes, spaces, terminals, props, answers = [] }) {
   const fire = async (ms) => { for (const t of timers.filter((t) => !t.every && t.ms === ms)) { timers.splice(timers.indexOf(t), 1); t.fn(cx); } await settle(); };
   // A save under the watched folder.
   const save = async (...paths) => { const w = watches.shift(); assert.ok(w, "a folder is watched"); w.resolve(paths); await settle(); };
-  return { view, cx, execs, overlays, timers, watches, render: () => view.render(cx), tick, settle, fire, save };
+  // A key command for this mod, as every header copy gets it.
+  const command = async (c) => { await settle(); commands.shift()?.(c); await settle(); };
+  return { view, cx, execs, overlays, timers, watches, runs, render: () => view.render(cx), tick, settle, fire, save, command };
 }
 
 const VIEW = { address: "t9", argv: ["sh", "/Users/me/.config/herdr-app/mods/omarchy-browser/view.sh", ""] };
@@ -278,4 +330,48 @@ test("a remote page shows no reload switch", async () => {
   const tree = h.render();
   assert.ok(byId(tree, "ph-errors-p2"));
   assert.equal(byId(tree, "ph-onsave-p2"), undefined);
+});
+
+const DEVTOOLS = { address: "t7", argv: devtoolsArgv("/Users/me/.config/herdr-app", 14, true) };
+const withDevtools = () => {
+  const w = world();
+  return { ...w, panes: [...w.panes, { pane: "p3", terminal: "t7", tab: "a", cwd: "/Users/me", program: { name: "node" } }], terminals: [...w.terminals, DEVTOOLS] };
+};
+
+test("the Browser pane's DevTools button opens DevTools below it, or closes the one open", async () => {
+  const h = header({ ...world(), props: { pane: "p2", terminal: "t9" }, answers: [errorsPage] });
+  h.render();
+  await h.tick();
+  byId(h.render(), "ph-devtools-p2").on.on_click({}, h.cx);
+  assert.deepEqual(h.runs, [["pane.split", { direction: "down", pane: "p2", argv: devtoolsArgv("/Users/me/.config/herdr-app", 14, true) }]]);
+
+  const open = header({ ...withDevtools(), props: { pane: "p2", terminal: "t9" }, answers: [errorsPage] });
+  open.render();
+  await open.tick();
+  byId(open.render(), "ph-devtools-p2").on.on_click({}, open.cx);
+  assert.deepEqual(open.runs, [["pane.close", { pane: "p3" }]]);
+});
+
+test("super-ctrl-i: the Browser pane's header opens DevTools, the DevTools pane's closes it, others do nothing", async () => {
+  const browserPane = header({ ...world(), props: { pane: "p2", terminal: "t9" }, born: 5000 });
+  const shell = header({ ...world(), props: { pane: "p1", terminal: "t1" }, born: 5000 });
+  await browserPane.command("devtools");
+  await shell.command("devtools");
+  assert.deepEqual(browserPane.runs.map((r) => r[0]), ["pane.split"]);
+  assert.deepEqual(shell.runs, []);
+
+  const w = withDevtools();
+  w.panes = w.panes.map((p) => ({ ...p, focused: p.pane === "p3" }));
+  const dt = header({ ...w, props: { pane: "p3", terminal: "t7" }, born: 5000 });
+  assert.ok(texts(dt.render()).includes("DevTools"));
+  await dt.command("devtools");
+  assert.deepEqual(dt.runs, [["pane.close", { pane: "p3" }]]);
+});
+
+test("a header just opened ignores the DevTools key that opened its pane", async () => {
+  const w = withDevtools();
+  w.panes = w.panes.map((p) => ({ ...p, focused: p.pane === "p3" }));
+  const dt = header({ ...w, props: { pane: "p3", terminal: "t7" } });
+  await dt.command("devtools");
+  assert.deepEqual(dt.runs, []);
 });

@@ -31,6 +31,7 @@ test('does not fold keys whose number differs from the action', () => {
 test('names our own keys and the global ones Herdr ships', () => {
   assert.deepEqual(describe('omarchy-voice.toggle'), { group: 'Terminal', label: 'Start or stop dictation' });
   assert.deepEqual(describe('omarchy-pane.toggle'), { group: 'Panes', label: 'Switch pane between Chat and Terminal' });
+  assert.deepEqual(describe('omarchy-pane.devtools'), { group: 'Panes', label: 'Open or close DevTools below the Browser pane' });
   assert.deepEqual(describe('omarchy-tabs.tab-next'), { group: 'Tabs', label: 'Next tab with a running agent' });
   assert.deepEqual(describe('omarchy-tabs.tab-prev'), { group: 'Tabs', label: 'Previous tab with a running agent' });
   assert.deepEqual(describe('omarchy-tabs.pane-back'), { group: 'Panes', label: 'Back to the previous pane' });

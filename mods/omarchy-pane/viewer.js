@@ -1,7 +1,8 @@
 // The omarchy browser's pane: a terminal running omarchy-browser's view.sh (herdr-app's viewer on
 // the @omarchy browser). Its header shows the page's errors and reloads a local page when a file
-// in the space's folder is saved (omarchy-browser/page.mjs). Here: how the header knows that pane,
-// when it's on screen, and which saves reload. No herdr imports, so tests can load it.
+// in the space's folder is saved (omarchy-browser/page.mjs), and opens DevTools for the page in a
+// pane below it (omarchy-browser/devtools.mjs). Here: how the header knows those panes, when
+// they're on screen, and which saves reload. No herdr imports, so tests can load it.
 
 // Whether core terminal `k` (an entry of terminals()) is the omarchy browser's viewer: started as
 // omarchy-browser/view.sh, or running herdr-browser-view on @omarchy (not another task's browser).
@@ -10,6 +11,34 @@ export function isViewer(k) {
   if (words.some((w) => /(^|[\\/])omarchy-browser[\\/]view\.sh$/.test(w))) return true;
   const i = words.indexOf("--task");
   return i >= 0 && words[i + 1] === "@omarchy" && words.some((w) => /(^|[\\/])herdr-browser-view$/.test(w));
+}
+
+// Whether core terminal `k` is the DevTools pane: omarchy-browser/devtools.mjs, or the viewer it
+// runs on @omarchy-devtools.
+export function isDevtools(k) {
+  const words = [...(k?.argv ?? []), ...(k?.foreground?.argv ?? [])].map(String);
+  if (words.some((w) => /(^|[\\/])omarchy-browser[\\/]devtools\.mjs$/.test(w))) return true;
+  const i = words.indexOf("--task");
+  return i >= 0 && words[i + 1] === "@omarchy-devtools" && words.some((w) => /(^|[\\/])herdr-browser-view$/.test(w));
+}
+
+// What a pane is to these headers: "viewer" (the Browser pane), "devtools", or null.
+export const kindOf = (k) => (isViewer(k) ? "viewer" : isDevtools(k) ? "devtools" : null);
+
+// The DevTools pane's program: devtools.mjs with the terminal font size (to tell Retina cells
+// from points) and Herdr's light or dark.
+export function devtoolsArgv(app, fontSize, dark) {
+  return ["sh", "-c", 'PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"; exec node "$0" --font-size "$1" --theme "$2"',
+    `${app}/mods/omarchy-browser/devtools.mjs`, String(fontSize || 14), dark ? "dark" : "light"];
+}
+
+// The pane whose header acts on the DevTools key (every header copy gets it): the focused pane
+// when it's the Browser or DevTools pane, else the first Browser pane on screen. `kind(pane)` as
+// kindOf for that pane's terminal.
+export function devtoolsKeyPane(panes, spaces, kind) {
+  const focused = panes.find((p) => p.focused);
+  if (focused && kind(focused)) return focused.pane;
+  return panes.find((p) => kind(p) === "viewer" && onScreen(p, spaces, panes))?.pane ?? null;
 }
 
 // Whether pane `self` (an entry of panes()) is on screen: its space and tab show, and no other
