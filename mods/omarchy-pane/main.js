@@ -21,15 +21,16 @@
 // The omarchy browser's pane (omarchy-browser's view.sh) says "Browser" and the page's address, and
 // shows how many errors the page has had since it loaded, looked at every few seconds while the
 // pane is on screen (viewer.js, omarchy-browser/page.mjs); a click lists the latest in a popup
-// (this mod again, with props { popup: "errors", page }).
+// (this mod again, with props { popup: "errors", page }). Saving a page file in the pane's space
+// folder reloads a local page (on by default; its header button turns it off for that pane).
 // Adapted from Shepherdr's pane-chat (MIT, see NOTICE).
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
-import { panes, terminals, spaces, machines, props, run, theme, home, exec, hc, notify, nextCommand, readTextFile, appHome, layout, shared, setShared, window, openOverlay } from "herdr";
+import { panes, terminals, spaces, machines, props, run, theme, home, exec, hc, notify, nextCommand, readTextFile, appHome, layout, shared, setShared, window, openOverlay, watchFolder } from "herdr";
 import { act, readLive, watchLive, touches } from "./browser/client.js";
 import { assistantStep, slotOf } from "./assistant.js";
-import { isViewer, onScreen, errorLabel, pageShown, errorsPopup } from "./viewer.js";
+import { isViewer, onScreen, errorLabel, pageShown, errorsPopup, saveFolder, reloads, Burst } from "./viewer.js";
 
 const CHAT = "chat";
 const LABEL = "herdr.chat";
@@ -146,6 +147,7 @@ const BROWSER = "mods/omarchy-pane/browser";
 // The omarchy browser's page, asked through omarchy-browser/page.mjs: its JSON answer, or null.
 const PAGE = () => `${appHome()}/mods/omarchy-browser/page.mjs`;
 const PAGE_MS = 4000;
+const SAVE_MS = 300;
 async function pageCall(cmd) {
   const r = await exec("sh", ["-c", 'PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"; exec node "$0" "$1"', PAGE(), cmd], { timeout: 30000 }).catch(() => null);
   try { return r ? JSON.parse(r.stdout) : null; } catch { return null; }
@@ -200,8 +202,12 @@ export default class Pane extends View {
       cx.notify();
     });
     if (!this.terminal) return;
-    // The omarchy browser's pane: its page's errors, looked at while the pane is on screen.
+    // The omarchy browser's pane: its page's errors, looked at while the pane is on screen, and
+    // reload on save (this.watching: the folder watched now).
     this.page = null;
+    this.onSave = true;
+    this.watching = null;
+    this.saves = new Burst(SAVE_MS);
     cx.timer.every(PAGE_MS, (cx) => this.lookAtPage(cx));
     cx.spawn(async (cx) => { await this.reload(cx); });
     watchLive(cx, this, async (changed, cx) => {
@@ -295,6 +301,73 @@ export default class Pane extends View {
       const next = page?.open ? page : null;
       if (JSON.stringify(next) !== JSON.stringify(this.page)) { this.page = next; cx.notify(); }
     });
+  }
+
+  // The folder whose saves reload this pane's page, or null (see saveFolder).
+  saveDir(self) {
+    return saveFolder(spaces().find((s) => s.tabs.some((t) => t.id === self?.tab)), home());
+  }
+
+  // Watches the space's folder while reload on save is on. The loop looks up at least every 5 s,
+  // so it ends soon after the folder changes or the switch goes off (render then starts the next
+  // one), and a reload's old build ends at its next cx use.
+  watchSaves(self, cx) {
+    const dir = this.onSave ? this.saveDir(self) : null;
+    if (!dir || this.watching === dir || this.unwatchable === dir) return;
+    this.watching = dir;
+    cx.spawn(async (cx) => {
+      let next = null;
+      for (;;) {
+        next ??= watchFolder(dir).catch(() => null);
+        const changed = await Promise.race([next, cx.sleep(5000)]);
+        if (this.closed || this.watching !== dir || !this.onSave || this.saveDir(this.me()) !== dir) break;
+        if (changed === undefined) continue;
+        next = null;
+        // A folder Herdr can't watch (gone, too big) isn't tried again by this copy.
+        if (!changed) { this.unwatchable = dir; break; }
+        if (changed.some((p) => reloads(p, dir)) && this.saves.hit(Date.now())) cx.timer.after(SAVE_MS, (cx) => this.saved(cx));
+      }
+      if (this.watching === dir) { this.watching = null; cx.notify(); }
+    });
+  }
+
+  // The last save of a burst: reload the page (page.mjs reloads only a local one), then look at
+  // its errors again, which start over with the new load.
+  saved(cx) {
+    const left = this.saves.left(Date.now());
+    if (left) { cx.timer.after(left, (cx) => this.saved(cx)); return; }
+    if (!this.onSave) return;
+    cx.spawn(async (cx) => {
+      const r = await pageCall("reload");
+      if (r?.reloaded) cx.timer.after(500, (cx) => this.lookAtPage(cx));
+    });
+  }
+
+  // Reload on save, on or off for this pane: shown for a local page only.
+  saveSwitch(t, pane, dir) {
+    const on = this.onSave && Boolean(dir);
+    return h_flex()
+      .id(`ph-onsave-${pane}`)
+      .h(20)
+      .px(6)
+      .gap(4)
+      .flex_none()
+      .items_center()
+      .rounded(0)
+      .border_1()
+      .text_size(11)
+      .when(on, (e) => e.bg(t.foreground + "2e").border_color(t.border).text_color(t.foreground))
+      .when(!on, (e) => e.border_color(t.border).text_color(t.dim))
+      .when(Boolean(dir), (e) => e.cursor_pointer().hover((s) => s.bg(t.foreground + "14").text_color(t.foreground)).on_click((_e, cx) => {
+        cx.stop_propagation();
+        this.onSave = !this.onSave;
+        cx.notify();
+      }))
+      .tooltip(!dir ? "Reload on save needs a space with a folder of its own"
+        : this.onSave ? `Saving a page file in ${folder(dir)} reloads the page. Click to turn it off.`
+        : "Click to reload the page when you save a file in this space's folder")
+      .child(svg(`${BROWSER}/refresh.svg`).size(12).flex_none())
+      .child(on ? "On save" : "Off");
   }
 
   // The page's error count; a click lists the latest ones in a popup under the pointer.
@@ -656,6 +729,8 @@ export default class Pane extends View {
       const on = onScreen(self, spaces(), panes());
       if (on && !this.onScreen) cx.timer.after(0, (cx) => this.lookAtPage(cx));
       this.onScreen = on;
+      const dir = this.onSave ? this.saveDir(self) : null;
+      if (dir && dir !== this.watching && dir !== this.unwatchable) cx.timer.after(0, (cx) => this.watchSaves(this.me(), cx));
     }
     const page = viewer ? this.page : null;
     // The icon names the program; the header says what it works on: its title, else the folder.
@@ -707,6 +782,7 @@ export default class Pane extends View {
       .when(canSwitch, (el) => el.child(this.switcher(t, pane, chatMode,
         (cx) => this.toChat(self, cx),
         (cx) => this.toTerminal(pane, cx))))
+      .when(Boolean(page?.local), (el) => el.child(this.saveSwitch(t, pane, this.saveDir(self))))
       .when(Boolean(page), (el) => el.child(this.errorBadge(t, pane)));
   }
 }

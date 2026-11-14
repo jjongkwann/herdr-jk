@@ -1,6 +1,7 @@
 // The omarchy browser's pane: a terminal running omarchy-browser's view.sh (herdr-app's viewer on
-// the @omarchy browser). Its header shows the page's errors (omarchy-browser/page.mjs). Here: how
-// the header knows that pane and when it's on screen. No herdr imports, so tests can load it.
+// the @omarchy browser). Its header shows the page's errors and reloads a local page when a file
+// in the space's folder is saved (omarchy-browser/page.mjs). Here: how the header knows that pane,
+// when it's on screen, and which saves reload. No herdr imports, so tests can load it.
 
 // Whether core terminal `k` (an entry of terminals()) is the omarchy browser's viewer: started as
 // omarchy-browser/view.sh, or running herdr-browser-view on @omarchy (not another task's browser).
@@ -36,4 +37,43 @@ export function errorsPopup(page) {
   const lines = (page.errors ?? []).map((e) => (e.length > 400 ? `${e.slice(0, 399)}…` : e));
   const older = page.count - lines.length;
   return { title: `${errorLabel(page.count)} on ${where}`, note: older > 0 ? `The latest ${lines.length}; ${older} more before them.` : "", lines };
+}
+
+// The folder whose saves reload the page: the pane's space's, on this computer, never the whole
+// home folder (or none: the space starts in home).
+export function saveFolder(space, home) {
+  const dir = (space?.folder ?? "").replace(/[\\/]+$/, "");
+  if (!space || space.machine || !dir || dir === home.replace(/[\\/]+$/, "")) return null;
+  return dir;
+}
+
+// What a page is made of; other files (logs, editor swap and backup files) don't reload it.
+const PAGE_FILE = /\.(html?|css|m?js|jsx|tsx?|json|svg|png|jpe?g|gif|webp|avif|ico|md)$/i;
+// Folders that change by themselves: dependencies, Git, and the caches dev servers write while they
+// serve a page (Next.js compiles into .next on each request), which would reload it in a loop.
+const CHURN = new Set(["node_modules", ".git", ".next", ".nuxt", ".svelte-kit", ".astro", ".output", ".cache",
+  ".parcel-cache", ".turbo", ".angular", ".vercel", "coverage"]);
+
+// Whether a changed path (from watchFolder(dir)) reloads the page. The folder itself means "many
+// things changed" (Herdr's bounded batch): that reloads too.
+export function reloads(path, dir) {
+  const p = path.replace(/\\/g, "/").replace(/\/+$/, ""), root = dir.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (p === root) return true;
+  if (!p.startsWith(root + "/")) return false;
+  const parts = p.slice(root.length + 1).split("/");
+  return !parts.some((x) => CHURN.has(x)) && PAGE_FILE.test(parts[parts.length - 1]);
+}
+
+// Saves come in bursts (an editor writes, a formatter writes again): one reload, `ms` after the last.
+export class Burst {
+  constructor(ms) { this.ms = ms; this.due = 0; }
+  // A save at `now`; true when no timer waits yet (start one for `ms`).
+  hit(now) { const idle = !this.due; this.due = now + this.ms; return idle; }
+  // The timer fired at `now`: 0 when it's time to reload, else how much longer to wait.
+  left(now) {
+    const ms = this.due - now;
+    if (ms > 0) return ms;
+    this.due = 0;
+    return 0;
+  }
 }

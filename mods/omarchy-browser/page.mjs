@@ -5,6 +5,8 @@
 // errors come from Chrome itself. Nothing here opens a closed browser: each command first checks
 // that the session runs, and prints {"open":false} when it doesn't.
 //   node page.mjs errors   {"open":true,"url":"…","local":true,"count":2,"errors":["…","…"]}
+//   node page.mjs reload   reloads the page (ab --own reload) only when it's local:
+//                          {"open":true,"url":"…","local":true,"reloaded":true}
 //
 // Errors since the page loaded: Chrome keeps a page's console messages from its last load (what
 // DevTools shows when opened late) and sends them again to a client that turns on the Runtime and
@@ -17,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const SESSION = "herdr-omarchy"; // ab's fixed key @omarchy
 const SHOWN = 5;                 // the latest errors printed with the count
 
-// Pages that run on this computer.
+// Pages that run on this computer: only these reload on save.
 export function isLocalUrl(url) {
   let u;
   try { u = new URL(url); } catch { return false; }
@@ -135,7 +137,12 @@ async function main(cmd) {
     const errors = errorsFrom(await replay(p.cdpUrl, p.tab.targetId));
     return { open: true, url, local, count: errors.length, errors: errors.slice(-SHOWN) };
   }
-  throw new Error(`page.mjs: unknown command ${cmd ?? ""} (errors)`);
+  if (cmd === "reload") {
+    if (!local) return { open: true, url, local, reloaded: false };
+    const r = await ab("reload", "--json");
+    return { open: true, url, local, reloaded: r.ok && r.json?.success !== false };
+  }
+  throw new Error(`page.mjs: unknown command ${cmd ?? ""} (errors, reload)`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

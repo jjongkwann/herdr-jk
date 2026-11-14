@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { isLocalUrl, activeTab, errorsFrom } from "../mods/omarchy-browser/page.mjs";
 import * as viewer from "../mods/omarchy-pane/viewer.js";
 
-const { isViewer, onScreen, errorLabel, pageShown, errorsPopup } = viewer;
+const { isViewer, onScreen, errorLabel, pageShown, errorsPopup, saveFolder, reloads, Burst } = viewer;
 
 // ---- page.mjs ----
 
@@ -87,6 +87,35 @@ test("the header shows the page without its scheme and the popup lists the lates
   assert.equal(p.lines[2].length, 400);
 });
 
+test("saves reload from the space's own folder on this computer, never from home", () => {
+  assert.equal(saveFolder({ folder: "/Users/me/site/" }, "/Users/me"), "/Users/me/site");
+  assert.equal(saveFolder({ folder: "/Users/me" }, "/Users/me"), null);
+  assert.equal(saveFolder({ folder: "" }, "/Users/me"), null);
+  assert.equal(saveFolder({ folder: "/home/u/site", machine: "mini" }, "/Users/me"), null);
+  assert.equal(saveFolder(undefined, "/Users/me"), null);
+});
+
+test("only page files outside dependencies, Git and dev-server caches reload", () => {
+  const dir = "/Users/me/site";
+  for (const f of ["index.html", "a.htm", "src/app.css", "src/main.js", "src/x.mjs", "src/App.tsx", "src/a.ts", "src/b.jsx", "data/x.json",
+    "img/logo.svg", "img/a.PNG", "img/b.jpeg", "c.webp", "favicon.ico", "README.md", "dist/bundle.js", "build/index.html"]) assert.ok(reloads(`${dir}/${f}`, dir), f);
+  for (const f of ["node_modules/react/index.js", ".git/index", ".git/HEAD", ".next/server/app.js", ".svelte-kit/x.js", "a/.cache/b.json",
+    "server.log", "src/.main.js.swp", "src/main.js~", "notes.txt", "Cargo.lock", "coverage/lcov.json"]) assert.ok(!reloads(`${dir}/${f}`, dir), f);
+  assert.ok(reloads(dir, dir), "the folder itself: many things changed");
+  assert.ok(!reloads("/Users/me/site-old/index.html", dir), "a sibling folder");
+  assert.ok(reloads("C:\\work\\site\\index.html", "C:\\work\\site"));
+});
+
+test("a burst of saves reloads once, 300 ms after the last", () => {
+  const b = new Burst(300);
+  assert.equal(b.hit(1000), true, "the first save starts a timer");
+  assert.equal(b.hit(1100), false);
+  assert.equal(b.hit(1250), false);
+  assert.equal(b.left(1300), 250, "the timer comes back for the rest");
+  assert.equal(b.left(1550), 0, "time to reload");
+  assert.equal(b.hit(2000), true, "the next save starts a new timer");
+});
+
 // ---- the header, against a fake Herdr ----
 
 const NODE = Symbol("node");
@@ -120,7 +149,7 @@ const texts = (tree) => walk(tree).flatMap((n) => n.kids.filter((k) => typeof k 
 const never = () => new Promise(() => {});
 
 function header({ panes, spaces, terminals, props, answers = [] }) {
-  const execs = [], overlays = [], timers = [], spawned = [];
+  const execs = [], overlays = [], timers = [], spawned = [], watches = [];
   const cx = {
     notify() {}, stop_propagation() {}, sleep: never,
     spawn: (fn) => spawned.push(fn(cx)),
@@ -134,6 +163,7 @@ function header({ panes, spaces, terminals, props, answers = [] }) {
     exec: async (cmd, args) => { execs.push([cmd, ...args]); return { code: 0, stdout: JSON.stringify(answers.shift() ?? { open: false }), stderr: "" }; },
     hc: async () => ({ code: 0, stdout: "" }), notify() {}, nextCommand: never, readTextFile: async () => null, layout: () => ({}),
     shared: () => undefined, setShared() {}, window: () => ({ platform: "macos" }), openOverlay: (spec) => { overlays.push(spec); return "o1"; },
+    watchFolder: (dir) => new Promise((resolve) => watches.push({ dir, resolve })),
     act: async () => false, readLive: async () => null, watchLive() {}, touches: () => false, assistantStep: () => ({ do: "none", memo: {} }), slotOf: () => null,
     ...viewer,
   };
@@ -145,7 +175,11 @@ function header({ panes, spaces, terminals, props, answers = [] }) {
   const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
   // Runs the timers due now (after(0)) and the repeating ones, as Herdr would.
   const tick = async () => { for (const t of timers.splice(0).filter((t) => t.every || t.ms === 0)) { t.fn(cx); if (t.every) timers.push(t); } await settle(); };
-  return { view, cx, execs, overlays, timers, render: () => view.render(cx), tick, settle };
+  // Runs the one-shot timers set for `ms`.
+  const fire = async (ms) => { for (const t of timers.filter((t) => !t.every && t.ms === ms)) { timers.splice(timers.indexOf(t), 1); t.fn(cx); } await settle(); };
+  // A save under the watched folder.
+  const save = async (...paths) => { const w = watches.shift(); assert.ok(w, "a folder is watched"); w.resolve(paths); await settle(); };
+  return { view, cx, execs, overlays, timers, watches, render: () => view.render(cx), tick, settle, fire, save };
 }
 
 const VIEW = { address: "t9", argv: ["sh", "/Users/me/.config/herdr-app/mods/omarchy-browser/view.sh", ""] };
@@ -202,4 +236,46 @@ test("a closed browser hides the count", async () => {
   assert.ok(byId(h.render(), "ph-errors-p2"));
   await h.tick();
   assert.equal(byId(h.render(), "ph-errors-p2"), undefined);
+});
+
+test("saving a page file reloads the page once after a burst; the switch turns it off", async (t) => {
+  let now = 10000;
+  t.mock.method(Date, "now", () => now);
+  const reloaded = { open: true, url: "http://localhost:5173/", local: true, reloaded: true };
+  const h = header({ ...world(), props: { pane: "p2", terminal: "t9" }, answers: [errorsPage, reloaded, { ...errorsPage, count: 0, errors: [] }] });
+  h.render();
+  await h.tick();
+  assert.equal(h.watches[0].dir, "/Users/me/site");
+  const sw = byId(h.render(), "ph-onsave-p2");
+  assert.ok(texts({ [NODE]: sw }).includes("On save"));
+  await h.save("/Users/me/site/node_modules/x/index.js", "/Users/me/site/server.log");
+  assert.equal(h.timers.filter((x) => x.ms === 300).length, 0, "nothing to reload");
+  await h.save("/Users/me/site/src/app.css");
+  now += 200;
+  await h.save("/Users/me/site/src/app.css", "/Users/me/site/src/main.js");
+  now += 100;
+  await h.fire(300);
+  assert.equal(h.execs.length, 1, "not yet: 200 ms since the last save");
+  now += 200;
+  await h.fire(200);
+  assert.deepEqual(h.execs.map((e) => e.at(-1)), ["errors", "reload"]);
+  await h.fire(500);
+  assert.deepEqual(h.execs.map((e) => e.at(-1)), ["errors", "reload", "errors"], "the errors start over with the new load");
+  assert.ok(texts(h.render()).includes("No errors"));
+
+  byId(h.render(), "ph-onsave-p2").on.on_click({}, h.cx);
+  assert.ok(texts({ [NODE]: byId(h.render(), "ph-onsave-p2") }).includes("Off"));
+  await h.save("/Users/me/site/index.html");
+  await h.fire(300);
+  assert.equal(h.execs.filter((e) => e.at(-1) === "reload").length, 1, "off: saves don't reload");
+  assert.equal(h.watches.length, 0, "and the folder isn't watched any more");
+});
+
+test("a remote page shows no reload switch", async () => {
+  const h = header({ ...world(), props: { pane: "p2", terminal: "t9" }, answers: [{ open: true, url: "https://example.com/", local: false, count: 0, errors: [] }] });
+  h.render();
+  await h.tick();
+  const tree = h.render();
+  assert.ok(byId(tree, "ph-errors-p2"));
+  assert.equal(byId(tree, "ph-onsave-p2"), undefined);
 });
