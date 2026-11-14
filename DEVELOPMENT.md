@@ -1,6 +1,6 @@
 # Working on Omarchy
 
-Each folder under `mods/` is a self-contained Herdr mod. `main.js` is its entry point. Keep helper imports within that folder so the mod can be installed independently. Herdr runs the UI with `gpui-kit`, `gpui-base`, and `herdr`. Mods also get `crypto` (`createHash`) and `os`; the rest of Node is available only in tests. `layouts/omarchy.json` also places mods from other repos (files-plus, pr-flow, herdr-sim, Shepherdr's chat, tasks and artifacts, reviewer); they are not in this repo. [`AGENTS.md`](AGENTS.md) has the rules for working here and the testing notes.
+Each folder under `mods/` is a self-contained Herdr mod. `main.js` is its entry point. Keep helper imports within that folder so the mod can be installed independently. Herdr runs the UI with `gpui-kit`, `gpui-base`, and `herdr`. Mods also get `crypto` (`createHash`) and `os`; the rest of Node is available only in tests. `layouts/omarchy.json` also places mods from other repos (files-plus, pr-flow, herdr-sim, Shepherdr's chat, tasks and artifacts, reviewer); they are not in this repo. Fixes to their installed copies are diffs in `patches/` ([`patches/README.md`](patches/README.md)). [`AGENTS.md`](AGENTS.md) has the rules for working here and the testing notes.
 
 ## Where to make changes
 
@@ -49,10 +49,14 @@ Each folder under `mods/` is a self-contained Herdr mod. `main.js` is its entry 
 | Browser pane header: the page's error count and its popup, reload on save | `mods/omarchy-pane/viewer.js`, `mods/omarchy-pane/main.js`, `mods/omarchy-browser/page.mjs` |
 | DevTools pane below the Browser pane, its button and key | `mods/omarchy-browser/devtools.mjs`, `mods/omarchy-pane/viewer.js`, `mods/omarchy-pane/main.js` |
 | Theme switcher and its previews | `mods/omarchy-themes/main.js`, `mods/omarchy-themes/previews/` |
+| A fix to an installed mod from another repo (Shepherdr, pr-flow, ...) | `patches/<owner>/<version>/<name>.patch`, and its row in `patches/README.md` |
+| Patch status and apply | `scripts/patches.mjs` |
 
 ## Check changes
 
 From the repo root, run `npm test`. Tests use Node's built-in runner with no installation step. Provider tests use fake login files and HTTP responses.
+
+For a patch, run `node scripts/patches.mjs status --root <dir>` on a scratch copy of the install tree it targets: it should show as `missing` before you apply it there and `applied` after.
 
 From the repo root, check each changed mod, for example:
 
