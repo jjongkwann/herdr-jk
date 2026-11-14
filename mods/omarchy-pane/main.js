@@ -25,6 +25,8 @@
 // folder reloads a local page (on by default; its header button turns it off for that pane). Its
 // DevTools button (or "omarchy-pane.devtools", a key) opens Chrome's DevTools for the page in a
 // pane below (omarchy-browser/devtools.mjs), or closes it.
+// Both are off for now (BROWSER_PANE), since they use agent-browser's Chrome for Testing: until Herdr
+// ships a browser of its own, a Browser or DevTools pane gets the plain header and the key does nothing.
 // Adapted from Shepherdr's pane-chat (MIT, see NOTICE).
 
 import { View, div, svg, image } from "gpui-kit";
@@ -38,6 +40,9 @@ const CHAT = "chat";
 const LABEL = "herdr.chat";
 // When a toggle last swapped a pane (every copy of this build shares it).
 let lastSwap = 0;
+// The Browser pane's header (page errors, reload on save, DevTools) and the DevTools key: off
+// while the omarchy browser is off. true brings them back.
+const BROWSER_PANE = false;
 // When the DevTools key last opened or closed DevTools (every copy shares it).
 let lastDevtools = 0;
 // Whether Shepherdr's chat mod is installed, looked up once for every copy. Without it there
@@ -294,12 +299,14 @@ export default class Pane extends View {
 
   // The core terminal when this pane is the omarchy browser's viewer, else null.
   viewer(self) {
+    if (!BROWSER_PANE) return null;
     const k = self?.terminal ? terminals().find((x) => x.address === self.terminal) : null;
     return isViewer(k) ? k : null;
   }
 
   // What a pane is to the browser: "viewer", "devtools" or null.
   kind(p) {
+    if (!BROWSER_PANE) return null;
     return kindOf(p?.terminal ? terminals().find((x) => x.address === p.terminal) : null);
   }
 

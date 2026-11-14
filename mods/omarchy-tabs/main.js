@@ -32,6 +32,9 @@ function withChats(allPanes = panes(), allTerminals = terminals(), raw = spaces(
 
 // The panel-body child each optional button opens, and the mod (installed on its own) it needs.
 const NEEDS = { tasks: "tasks", artifacts: "artifacts", "herdr-sim": "herdr-sim" };
+// The Browser button is off for now: omarchy-browser runs agent-browser's Chrome for Testing, and
+// agents use Firefox until Herdr ships a browser of its own. true brings the button back.
+const BROWSER_BUTTON = false;
 
 export default class Tabs extends View {
   init(_props, cx) {
@@ -324,7 +327,7 @@ export default class Tabs extends View {
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Git", "mods/changes/changes.svg")))
       .when(enabled.includes("herdr-sim"), el => el.child(panelButton("herdr-sim", "Simulator", "mods/herdr-sim/icons/smartphone.svg")))
-      .when(Boolean(this.mods?.["omarchy-browser"]), el => el.child(h_flex().id("open-browser").h_full().px(12).gap(6).flex_none().items_center().rounded(0).border_l(1).border_color(t.border)
+      .when(BROWSER_BUTTON && Boolean(this.mods?.["omarchy-browser"]), el => el.child(h_flex().id("open-browser").h_full().px(12).gap(6).flex_none().items_center().rounded(0).border_l(1).border_color(t.border)
         .text_size(12).bg(idle).text_color(t.muted).hover(s => s.bg(hov)).on_mouse_down("left", stop)
         .on_click(() => run("omarchy-browser.open")).child(svg("mods/omarchy-tabs/icons/globe.svg").size(14)).child("Browser")))
       .when(enabled.includes("tasks"), el => el.child(panelButton("tasks", "Tasks", "mods/tasks/tasks.svg")))

@@ -57,16 +57,6 @@
           }
         },
         {
-          "id": "browser-cmd",
-          "type": "block",
-          "size": {
-            "px": 0
-          },
-          "content": {
-            "mod": "omarchy-browser"
-          }
-        },
-        {
           "id": "voice",
           "type": "block",
           "size": {
@@ -406,19 +396,6 @@
                                       "content": {
                                         "mod": "task-pr"
                                       }
-                                    },
-                                    {
-                                      "id": "tasks-thread-browser",
-                                      "type": "column",
-                                      "children": [
-                                        {
-                                          "id": "tasks-thread-browser-host",
-                                          "type": "block",
-                                          "content": {
-                                            "mod": "task-browser"
-                                          }
-                                        }
-                                      ]
                                     }
                                   ]
                                 }

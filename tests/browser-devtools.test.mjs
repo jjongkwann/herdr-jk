@@ -240,7 +240,9 @@ const byId = (tree, id) => walk(tree).find((n) => n.id === id);
 const texts = (tree) => walk(tree).flatMap((n) => n.kids.filter((k) => typeof k === "string"));
 const never = () => new Promise(() => {});
 
-function header({ panes, spaces, terminals, props, answers = [], born = 0 }) {
+// browserPane: the BROWSER_PANE switch in main.js, off as shipped while the omarchy browser is off. The
+// tests below turn it on, to keep checking the header that comes back with it.
+function header({ panes, spaces, terminals, props, answers = [], born = 0, browserPane = true }) {
   const execs = [], overlays = [], timers = [], spawned = [], watches = [], runs = [], commands = [];
   const cx = {
     notify() {}, stop_propagation() {}, sleep: never,
@@ -259,7 +261,10 @@ function header({ panes, spaces, terminals, props, answers = [], born = 0 }) {
     act: async () => false, readLive: async () => null, watchLive() {}, touches: () => false, assistantStep: () => ({ do: "none", memo: {} }), slotOf: () => null,
     ...viewer,
   };
-  const body = readFileSync("mods/omarchy-pane/main.js", "utf8").replace(/^import [\s\S]*?;\n/gm, "").replace("export default class", "return class");
+  const source = readFileSync("mods/omarchy-pane/main.js", "utf8");
+  assert.ok(source.includes("const BROWSER_PANE = false;\n"), "main.js ships with the Browser pane's header off");
+  const body = source.replace("const BROWSER_PANE = false;\n", `const BROWSER_PANE = ${browserPane};\n`)
+    .replace(/^import [\s\S]*?;\n/gm, "").replace("export default class", "return class");
   const Pane = Function(...Object.keys(host), body)(...Object.values(host));
   const view = new Pane();
   const realNow = Date.now;
@@ -410,6 +415,26 @@ test("super-ctrl-i: the Browser pane's header opens DevTools, the DevTools pane'
   assert.ok(texts(dt.render()).includes("DevTools"));
   await dt.command("devtools");
   assert.deepEqual(dt.runs, [["pane.close", { pane: "p3" }]]);
+});
+
+test("off as shipped: a Browser or DevTools pane gets the plain header, and the DevTools key does nothing", async () => {
+  const h = header({ ...world(), props: { pane: "p2", terminal: "t9" }, answers: [errorsPage], born: 5000, browserPane: false });
+  h.render();
+  await h.tick();
+  const tree = h.render();
+  assert.deepEqual(h.execs, [], "page.mjs isn't asked");
+  assert.equal(h.watches.length, 0, "no reload on save");
+  for (const id of ["ph-devtools-p2", "ph-onsave-p2", "ph-errors-p2"]) assert.equal(byId(tree, id), undefined, id);
+  assert.ok(!texts(tree).includes("Browser"));
+  await h.command("devtools");
+  assert.deepEqual(h.runs, []);
+
+  const w = withDevtools();
+  w.panes = w.panes.map((p) => ({ ...p, focused: p.pane === "p3" }));
+  const dt = header({ ...w, props: { pane: "p3", terminal: "t7" }, born: 5000, browserPane: false });
+  assert.ok(!texts(dt.render()).includes("DevTools"));
+  await dt.command("devtools");
+  assert.deepEqual(dt.runs, []);
 });
 
 test("a header just opened ignores the DevTools key that opened its pane", async () => {
