@@ -96,7 +96,7 @@ It needs whisper.cpp (`brew install whisper-cpp`) and a whisper model in `~/.con
 
 ## Keys
 
-These are the keys in [`keys.json`](keys.json). They work only in the Omarchy layout, except Ctrl+arrows, which also apply in terminals across layouts. `super` is ⌘ on macOS. `super-k` lists every key.
+These are the keys in [`keys.json`](keys.json). They work only in the Omarchy layout. `super` is ⌘ on macOS. `super-k` lists every key.
 
 | Key | Action |
 | --- | --- |
@@ -106,7 +106,6 @@ These are the keys in [`keys.json`](keys.json). They work only in the Omarchy la
 | `super-shift-left` / `super-shift-right` | Previous / next tab with a working or blocked agent; the plain previous / next tab when none has one |
 | `alt-up` / `alt-down` or `super-up` / `super-down` | Previous / next space |
 | `super-shift-up` / `super-shift-down` | Previous / next agent, in the sidebar's order |
-| `ctrl-left` / `ctrl-right` / `ctrl-up` / `ctrl-down` | Move between panes |
 | `super-ctrl-left` / `super-ctrl-right` | Back / forward through the panes you focused |
 | `alt-enter` / `alt-shift-enter` | Split the pane right / down |
 | `super-return` | New terminal |
@@ -128,7 +127,7 @@ These are the keys in [`keys.json`](keys.json). They work only in the Omarchy la
 | `ctrl-,` | Open Settings |
 | `ctrl-shift-m` | Open the mod manager |
 
-Ctrl+arrows take priority over terminal shortcuts, including Ctrl+Left/Right word movement.
+Moving between panes is Herdr's own default, `super-alt` arrows; this repo doesn't bind it.
 
 ## What is inside
 

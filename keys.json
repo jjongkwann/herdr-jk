@@ -1,10 +1,4 @@
 {
-  "terminal": {
-    "ctrl-left": "pane.go:left",
-    "ctrl-right": "pane.go:right",
-    "ctrl-up": "pane.go:up",
-    "ctrl-down": "pane.go:down"
-  },
   "layout:omarchy": {
     "super-ctrl-v": "omarchy-voice.toggle",
     "super-ctrl-c": "omarchy-pane.toggle",
@@ -52,10 +46,6 @@
     "super-shift-right": "omarchy-tabs.tab-next",
     "super-ctrl-left": "omarchy-tabs.pane-back",
     "super-ctrl-right": "omarchy-tabs.pane-forward",
-    "ctrl-left": "pane.go:left",
-    "ctrl-right": "pane.go:right",
-    "ctrl-up": "pane.go:up",
-    "ctrl-down": "pane.go:down",
     "super-return": "terminal.open",
     "super-w": "pane.close",
     "super-f": "pane.zoom",
