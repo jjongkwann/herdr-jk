@@ -4,8 +4,8 @@ How to work in this repo. [`README.md`](README.md) says what the layout does, [`
 
 ## What the repo holds
 
-- This is `jjongkwann/herdr-jk` (remote `origin`). It holds the `omarchy` layout (`layouts/omarchy.json`), its `omarchy-*` mods, `keys.json`, themes and wallpapers, and nothing else.
-- Other mods the layout places live in their own repos: `files-plus`, `pr-flow`, `herdr-sim`, Shepherdr's `chat`, `tasks`, `artifacts`, `task-*` and `new-menu-tasks`, and `reviewer`. `layouts/omarchy.json` naming mods that are not in this repo is intended. Don't copy those mods in, and don't remove them from the layout.
+- This is `jjongkwann/herdr-jk` (remote `origin`). It holds the `omarchy` layout (`layouts/omarchy.json`), its `omarchy-*` mods, `keys.json`, themes and wallpapers, and `patches/`: local fixes to installed mods it doesn't own, with `scripts/patches.mjs` to check and apply them ([`patches/README.md`](patches/README.md)).
+- Other mods the layout places live in their own repos: `files-plus`, `pr-flow`, `herdr-sim`, Shepherdr's `chat`, `tasks`, `artifacts`, `task-*` and `new-menu-tasks`, and `reviewer`. `layouts/omarchy.json` naming mods that are not in this repo is intended. Don't copy those mods in, and don't remove them from the layout. A fix to one of their installed copies goes in `patches/` as a diff, not as a copy of the mod.
 - The repo started from `shafiqimtiaz/herdr-omarchy` (remote `upstream`), which is reference only: its push URL is disabled. Bring an upstream commit in with `git cherry-pick -x <sha>` so the upstream sha stays in the message. When it conflicts, keep this repo's behavior and fit the upstream feature into it. Never push to upstream or open pull requests there.
 - Commit messages are English and follow the repo's style: `feat(omarchy-keys): ...`, `fix(omarchy-ai-usage): ...`.
 
@@ -14,7 +14,7 @@ How to work in this repo. [`README.md`](README.md) says what the layout does, [`
 Run both before you call a change done:
 
 ```sh
-npm test                          # node --test tests/*.mjs, no install step
+npm test                          # node --test tests/*.mjs, no install step (scripts/patches.mjs too)
 herdr-app check mods/<name>       # each mod you changed
 ```
 
@@ -27,7 +27,8 @@ herdr-app check mods/<name>       # each mod you changed
 - The person installs this only on this Mac. Their Windows PC runs plain Herdr, and nothing is copied to other machines.
 - In a Herdr task, don't copy files into `~/.config/herdr-app`, switch layouts or drive the Herdr window: the Assistant installs the change after the person accepts it.
 - Saving a mod file in `~/.config/herdr-app` reloads every copy of that mod. Make all of a file's changes in one save.
-- Shepherdr's chat mod has local edits on this Mac so its mic works: `~/.config/herdr-app/mods/chat/record.ts` records with ffmpeg on macOS, and `~/.config/herdr-app/mods/chat/dictate.js` has a changed whisper model path. They are edits to another project's installed mod, not part of this repo, and a Shepherdr update replaces them.
+- A fix to an installed mod this repo doesn't own (Shepherdr's mods, pr-flow, ...) is kept in `patches/` as a diff against the install root, with the owner's version it is for. An update overwrites the installed files: run `node scripts/patches.mjs status`, then apply the missing patches as [`patches/README.md`](patches/README.md) says. Shepherdr 3.1.5's local chat edits (mic with ffmpeg, the whisper model path, the macOS clipboard) are patches there too, and 3.1.34 covers or replaces them.
+- In a Herdr task, build and test a patch on a scratch copy of the installed tree (`node scripts/patches.mjs status --root <scratch>`); the Assistant applies it to `~/.config/herdr-app`.
 
 ## Writing mod code
 

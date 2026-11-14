@@ -1,0 +1,49 @@
+Subject: Tasks: an agy worker gets its brief after -i (agy refuses a bare prompt), and its model, effort and permission flags
+Owner: shepherdr
+Versions: >=3.1.34
+
+diff --git a/mods/tasks/bin/herdr_task/launch.py b/mods/tasks/bin/herdr_task/launch.py
+index db2d5e9..c1d84d6 100644
+--- a/mods/tasks/bin/herdr_task/launch.py
++++ b/mods/tasks/bin/herdr_task/launch.py
+@@ -691,7 +691,8 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
+     if not role:
+         cmd = own_argv(cmd, folder_for(s, task))
+     if message:
+-        cmd = cmd + [message]
++        # Antigravity CLI takes a prompt only after a flag (-i: the session stays open after it, as the others').
++        cmd = cmd + (["-i", message] if agent_key(argv) == "agy" else [message])
+     labels = ["--label", f"herdr.task={key}", "--label", f"herdr.task.space={bare(space)}",
+               "--label", f"herdr.agent={agent_key(argv)}"]
+     ctab = coordinator_tab(parent)
+diff --git a/mods/tasks/bin/herdr_task/settings.py b/mods/tasks/bin/herdr_task/settings.py
+index c603149..d16157b 100644
+--- a/mods/tasks/bin/herdr_task/settings.py
++++ b/mods/tasks/bin/herdr_task/settings.py
+@@ -195,9 +195,26 @@ def argv_for(pick):
+         elif perm:
+             a += ["-s", "workspace-write", "-a", "on-request"]
+         return a
++    if agent == "agy":
++        # Antigravity CLI: its first message goes after -i (launch()); its permissions as its own flags say them.
++        a = ["agy"]
++        if pick.get("model"):
++            a += ["--model", pick["model"]]
++        if pick.get("effort"):
++            a += ["--effort", pick["effort"]]
++        perm = pick.get("perm")
++        if perm in ("bypassPermissions", "full"):
++            a.append("--dangerously-skip-permissions")
++        elif perm in AGY_MODES:
++            a += ["--mode", AGY_MODES[perm]]
++        return a
+     return [agent] if agent else None
+ 
+ 
++# A permission mode as Antigravity CLI's --mode says it (full access: --dangerously-skip-permissions).
++AGY_MODES = {"auto": "auto", "acceptEdits": "accept-edits", "plan": "plan", "read-only": "plan"}
++
++
+ def worker_pick(s, task, space=None, agent=None):
+     """What a task's agent runs on, {agent, model, effort, fast, perm}: Settings' worker, then the
+     task's own --agent / --model / --effort, then `agent` (start --agent). Another CLI than

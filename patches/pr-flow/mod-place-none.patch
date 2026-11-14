@@ -1,0 +1,11 @@
+Subject: pr-flow opens only inside the omarchy Git panel (place none), not as its own right panel
+Owner: pr-flow
+Versions: *
+
+diff --git a/mods/pr-flow/mod.json b/mods/pr-flow/mod.json
+index 5bc4236..55c9f83 100644
+--- a/mods/pr-flow/mod.json
++++ b/mods/pr-flow/mod.json
+@@ -1 +1 @@
+-{ "place": "right", "size": 340, "title": "Pull requests" }
++{"place": "none", "size": 340, "title": "Pull requests"}

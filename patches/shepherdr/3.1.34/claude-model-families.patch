@@ -1,0 +1,382 @@
+Subject: Model picker: one Claude row per family (opus, fable, ...), so a new model version is picked up; core/agents.js and all its copies
+Owner: shepherdr
+Versions: >=3.1.34
+
+diff --git a/core/agents.js b/core/agents.js
+index 4637d6e..be7e6e0 100644
+--- a/core/agents.js
++++ b/core/agents.js
+@@ -4,15 +4,26 @@
+ // Shared core: the source is core/agents.js; bin/sync-shared copies it into the mods in lib/COPIES.
+ export const NAMES = { claude: "Claude Code", codex: "Codex" };
+ 
+-// Claude Code's current models, as its /model menu offers them. `id` is what --model gets;
+-// `match` the names a running agent may report for it.
++// Claude Code's models, one row per family. `id` is the alias --model gets, which Claude Code
++// resolves to that family's latest model, so no version is written here. A running agent's
++// model ("claude-fable-5-2") belongs to the row of its family; [1m] ones to the 1M row.
+ const CLAUDE_MODELS = [
+-  { id: "opus", name: "Opus 5.5", match: ["opus", "claude-opus-5-5"] },
+-  { id: "opus[1m]", name: "Opus 5.5 · 1M", match: ["opus[1m]", "claude-opus-5-5[1m]"] },
+-  { id: "claude-fable-5-1", name: "Fable 5.1", match: ["fable", "claude-fable-5-1"] },
+-  { id: "sonnet", name: "Sonnet 5.5", match: ["sonnet", "claude-sonnet-5-5"] },
+-  { id: "haiku", name: "Haiku 5.5", match: ["haiku", "claude-haiku-5-5"] },
++  { id: "opus", name: "Opus", family: "opus" },
++  { id: "opus[1m]", name: "Opus · 1M", family: "opus", big: true },
++  { id: "fable", name: "Fable", family: "fable" },
++  { id: "sonnet", name: "Sonnet", family: "sonnet" },
++  { id: "haiku", name: "Haiku", family: "haiku" },
+ ];
++// "claude-fable-5-2" or "fable" -> "fable"
++const familyOf = (x) => /^claude-([a-z]+)-/.exec(x ?? "")?.[1] ?? (x ?? "").replace(/\[1m\]$/, "");
++// Whether a name an agent reports (an alias or a full model id) is this row's.
++const isRow = (m, x) => x === m.id || (/^claude-/.test(x ?? "") && familyOf(x) === m.family && x.endsWith("[1m]") === Boolean(m.big));
++// The effort Claude's modelSettings gives a family: its newest model's entry, as the alias runs that one.
++function familyEffort(per, family) {
++  const keys = Object.keys(per ?? {}).filter((k) => /^claude-/.test(k) && familyOf(k) === family && per[k] != null)
++    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
++  return keys.length ? per[keys[keys.length - 1]] : null;
++}
+ const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+ // Permission modes as each CLI has them (Claude: --permission-mode, or
+ // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
+@@ -162,7 +173,7 @@ export function contextWords(c) {
+ export function menuFor(agent, dflt, current = null) {
+   if (agent === "claude") {
+     const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
+-      defaultEffort: dflt?.per?.[m.match[1].replace(/\[1m\]$/, "")] ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
++      defaultEffort: familyEffort(dflt?.per, m.family) ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
+     // a model typed by id (an older one it still takes) stays in the list while it runs
+     if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
+     return { name: NAMES.claude, perms: PERMS.claude, models };
+@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+ // The picker row that is what runs now (`c` from current()), or the model as it is.
+ export function rowFor(agent, c) {
+   if (agent !== "claude") return c?.model ?? null;
+-  const has = (m, x) => (m.match ?? [m.id]).includes(x);
+   // What runs (the log's model) wins; the alias it was started with only tells which row of
+   // that model (Opus or Opus 1M), since the log names both alike.
+-  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => has(m, c.alias)) : null;
+-  const byModel = c?.model ? CLAUDE_MODELS.find((m) => has(m, c.model)) : null;
+-  const same = byAlias && (!c?.model || (byAlias.match ?? [byAlias.id]).some((x) => x.replace(/\[1m\]$/, "") === c.model));
++  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => isRow(m, c.alias)) : null;
++  const byModel = c?.model ? CLAUDE_MODELS.find((m) => isRow(m, c.model)) : null;
++  const same = byAlias && (!c?.model || familyOf(c.model) === byAlias.family);
+   return (same ? byAlias : byModel ?? byAlias)?.id ?? c?.model ?? null;
+ }
+ 
+diff --git a/mods/chat-models/core/agents.js b/mods/chat-models/core/agents.js
+index 4637d6e..be7e6e0 100644
+--- a/mods/chat-models/core/agents.js
++++ b/mods/chat-models/core/agents.js
+@@ -4,15 +4,26 @@
+ // Shared core: the source is core/agents.js; bin/sync-shared copies it into the mods in lib/COPIES.
+ export const NAMES = { claude: "Claude Code", codex: "Codex" };
+ 
+-// Claude Code's current models, as its /model menu offers them. `id` is what --model gets;
+-// `match` the names a running agent may report for it.
++// Claude Code's models, one row per family. `id` is the alias --model gets, which Claude Code
++// resolves to that family's latest model, so no version is written here. A running agent's
++// model ("claude-fable-5-2") belongs to the row of its family; [1m] ones to the 1M row.
+ const CLAUDE_MODELS = [
+-  { id: "opus", name: "Opus 5.5", match: ["opus", "claude-opus-5-5"] },
+-  { id: "opus[1m]", name: "Opus 5.5 · 1M", match: ["opus[1m]", "claude-opus-5-5[1m]"] },
+-  { id: "claude-fable-5-1", name: "Fable 5.1", match: ["fable", "claude-fable-5-1"] },
+-  { id: "sonnet", name: "Sonnet 5.5", match: ["sonnet", "claude-sonnet-5-5"] },
+-  { id: "haiku", name: "Haiku 5.5", match: ["haiku", "claude-haiku-5-5"] },
++  { id: "opus", name: "Opus", family: "opus" },
++  { id: "opus[1m]", name: "Opus · 1M", family: "opus", big: true },
++  { id: "fable", name: "Fable", family: "fable" },
++  { id: "sonnet", name: "Sonnet", family: "sonnet" },
++  { id: "haiku", name: "Haiku", family: "haiku" },
+ ];
++// "claude-fable-5-2" or "fable" -> "fable"
++const familyOf = (x) => /^claude-([a-z]+)-/.exec(x ?? "")?.[1] ?? (x ?? "").replace(/\[1m\]$/, "");
++// Whether a name an agent reports (an alias or a full model id) is this row's.
++const isRow = (m, x) => x === m.id || (/^claude-/.test(x ?? "") && familyOf(x) === m.family && x.endsWith("[1m]") === Boolean(m.big));
++// The effort Claude's modelSettings gives a family: its newest model's entry, as the alias runs that one.
++function familyEffort(per, family) {
++  const keys = Object.keys(per ?? {}).filter((k) => /^claude-/.test(k) && familyOf(k) === family && per[k] != null)
++    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
++  return keys.length ? per[keys[keys.length - 1]] : null;
++}
+ const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+ // Permission modes as each CLI has them (Claude: --permission-mode, or
+ // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
+@@ -162,7 +173,7 @@ export function contextWords(c) {
+ export function menuFor(agent, dflt, current = null) {
+   if (agent === "claude") {
+     const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
+-      defaultEffort: dflt?.per?.[m.match[1].replace(/\[1m\]$/, "")] ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
++      defaultEffort: familyEffort(dflt?.per, m.family) ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
+     // a model typed by id (an older one it still takes) stays in the list while it runs
+     if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
+     return { name: NAMES.claude, perms: PERMS.claude, models };
+@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+ // The picker row that is what runs now (`c` from current()), or the model as it is.
+ export function rowFor(agent, c) {
+   if (agent !== "claude") return c?.model ?? null;
+-  const has = (m, x) => (m.match ?? [m.id]).includes(x);
+   // What runs (the log's model) wins; the alias it was started with only tells which row of
+   // that model (Opus or Opus 1M), since the log names both alike.
+-  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => has(m, c.alias)) : null;
+-  const byModel = c?.model ? CLAUDE_MODELS.find((m) => has(m, c.model)) : null;
+-  const same = byAlias && (!c?.model || (byAlias.match ?? [byAlias.id]).some((x) => x.replace(/\[1m\]$/, "") === c.model));
++  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => isRow(m, c.alias)) : null;
++  const byModel = c?.model ? CLAUDE_MODELS.find((m) => isRow(m, c.model)) : null;
++  const same = byAlias && (!c?.model || familyOf(c.model) === byAlias.family);
+   return (same ? byAlias : byModel ?? byAlias)?.id ?? c?.model ?? null;
+ }
+ 
+diff --git a/mods/chat/core/agents.js b/mods/chat/core/agents.js
+index 4637d6e..be7e6e0 100644
+--- a/mods/chat/core/agents.js
++++ b/mods/chat/core/agents.js
+@@ -4,15 +4,26 @@
+ // Shared core: the source is core/agents.js; bin/sync-shared copies it into the mods in lib/COPIES.
+ export const NAMES = { claude: "Claude Code", codex: "Codex" };
+ 
+-// Claude Code's current models, as its /model menu offers them. `id` is what --model gets;
+-// `match` the names a running agent may report for it.
++// Claude Code's models, one row per family. `id` is the alias --model gets, which Claude Code
++// resolves to that family's latest model, so no version is written here. A running agent's
++// model ("claude-fable-5-2") belongs to the row of its family; [1m] ones to the 1M row.
+ const CLAUDE_MODELS = [
+-  { id: "opus", name: "Opus 5.5", match: ["opus", "claude-opus-5-5"] },
+-  { id: "opus[1m]", name: "Opus 5.5 · 1M", match: ["opus[1m]", "claude-opus-5-5[1m]"] },
+-  { id: "claude-fable-5-1", name: "Fable 5.1", match: ["fable", "claude-fable-5-1"] },
+-  { id: "sonnet", name: "Sonnet 5.5", match: ["sonnet", "claude-sonnet-5-5"] },
+-  { id: "haiku", name: "Haiku 5.5", match: ["haiku", "claude-haiku-5-5"] },
++  { id: "opus", name: "Opus", family: "opus" },
++  { id: "opus[1m]", name: "Opus · 1M", family: "opus", big: true },
++  { id: "fable", name: "Fable", family: "fable" },
++  { id: "sonnet", name: "Sonnet", family: "sonnet" },
++  { id: "haiku", name: "Haiku", family: "haiku" },
+ ];
++// "claude-fable-5-2" or "fable" -> "fable"
++const familyOf = (x) => /^claude-([a-z]+)-/.exec(x ?? "")?.[1] ?? (x ?? "").replace(/\[1m\]$/, "");
++// Whether a name an agent reports (an alias or a full model id) is this row's.
++const isRow = (m, x) => x === m.id || (/^claude-/.test(x ?? "") && familyOf(x) === m.family && x.endsWith("[1m]") === Boolean(m.big));
++// The effort Claude's modelSettings gives a family: its newest model's entry, as the alias runs that one.
++function familyEffort(per, family) {
++  const keys = Object.keys(per ?? {}).filter((k) => /^claude-/.test(k) && familyOf(k) === family && per[k] != null)
++    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
++  return keys.length ? per[keys[keys.length - 1]] : null;
++}
+ const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+ // Permission modes as each CLI has them (Claude: --permission-mode, or
+ // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
+@@ -162,7 +173,7 @@ export function contextWords(c) {
+ export function menuFor(agent, dflt, current = null) {
+   if (agent === "claude") {
+     const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
+-      defaultEffort: dflt?.per?.[m.match[1].replace(/\[1m\]$/, "")] ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
++      defaultEffort: familyEffort(dflt?.per, m.family) ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
+     // a model typed by id (an older one it still takes) stays in the list while it runs
+     if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
+     return { name: NAMES.claude, perms: PERMS.claude, models };
+@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+ // The picker row that is what runs now (`c` from current()), or the model as it is.
+ export function rowFor(agent, c) {
+   if (agent !== "claude") return c?.model ?? null;
+-  const has = (m, x) => (m.match ?? [m.id]).includes(x);
+   // What runs (the log's model) wins; the alias it was started with only tells which row of
+   // that model (Opus or Opus 1M), since the log names both alike.
+-  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => has(m, c.alias)) : null;
+-  const byModel = c?.model ? CLAUDE_MODELS.find((m) => has(m, c.model)) : null;
+-  const same = byAlias && (!c?.model || (byAlias.match ?? [byAlias.id]).some((x) => x.replace(/\[1m\]$/, "") === c.model));
++  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => isRow(m, c.alias)) : null;
++  const byModel = c?.model ? CLAUDE_MODELS.find((m) => isRow(m, c.model)) : null;
++  const same = byAlias && (!c?.model || familyOf(c.model) === byAlias.family);
+   return (same ? byAlias : byModel ?? byAlias)?.id ?? c?.model ?? null;
+ }
+ 
+diff --git a/mods/coordinator/core/agents.js b/mods/coordinator/core/agents.js
+index 4637d6e..be7e6e0 100644
+--- a/mods/coordinator/core/agents.js
++++ b/mods/coordinator/core/agents.js
+@@ -4,15 +4,26 @@
+ // Shared core: the source is core/agents.js; bin/sync-shared copies it into the mods in lib/COPIES.
+ export const NAMES = { claude: "Claude Code", codex: "Codex" };
+ 
+-// Claude Code's current models, as its /model menu offers them. `id` is what --model gets;
+-// `match` the names a running agent may report for it.
++// Claude Code's models, one row per family. `id` is the alias --model gets, which Claude Code
++// resolves to that family's latest model, so no version is written here. A running agent's
++// model ("claude-fable-5-2") belongs to the row of its family; [1m] ones to the 1M row.
+ const CLAUDE_MODELS = [
+-  { id: "opus", name: "Opus 5.5", match: ["opus", "claude-opus-5-5"] },
+-  { id: "opus[1m]", name: "Opus 5.5 · 1M", match: ["opus[1m]", "claude-opus-5-5[1m]"] },
+-  { id: "claude-fable-5-1", name: "Fable 5.1", match: ["fable", "claude-fable-5-1"] },
+-  { id: "sonnet", name: "Sonnet 5.5", match: ["sonnet", "claude-sonnet-5-5"] },
+-  { id: "haiku", name: "Haiku 5.5", match: ["haiku", "claude-haiku-5-5"] },
++  { id: "opus", name: "Opus", family: "opus" },
++  { id: "opus[1m]", name: "Opus · 1M", family: "opus", big: true },
++  { id: "fable", name: "Fable", family: "fable" },
++  { id: "sonnet", name: "Sonnet", family: "sonnet" },
++  { id: "haiku", name: "Haiku", family: "haiku" },
+ ];
++// "claude-fable-5-2" or "fable" -> "fable"
++const familyOf = (x) => /^claude-([a-z]+)-/.exec(x ?? "")?.[1] ?? (x ?? "").replace(/\[1m\]$/, "");
++// Whether a name an agent reports (an alias or a full model id) is this row's.
++const isRow = (m, x) => x === m.id || (/^claude-/.test(x ?? "") && familyOf(x) === m.family && x.endsWith("[1m]") === Boolean(m.big));
++// The effort Claude's modelSettings gives a family: its newest model's entry, as the alias runs that one.
++function familyEffort(per, family) {
++  const keys = Object.keys(per ?? {}).filter((k) => /^claude-/.test(k) && familyOf(k) === family && per[k] != null)
++    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
++  return keys.length ? per[keys[keys.length - 1]] : null;
++}
+ const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+ // Permission modes as each CLI has them (Claude: --permission-mode, or
+ // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
+@@ -162,7 +173,7 @@ export function contextWords(c) {
+ export function menuFor(agent, dflt, current = null) {
+   if (agent === "claude") {
+     const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
+-      defaultEffort: dflt?.per?.[m.match[1].replace(/\[1m\]$/, "")] ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
++      defaultEffort: familyEffort(dflt?.per, m.family) ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
+     // a model typed by id (an older one it still takes) stays in the list while it runs
+     if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
+     return { name: NAMES.claude, perms: PERMS.claude, models };
+@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+ // The picker row that is what runs now (`c` from current()), or the model as it is.
+ export function rowFor(agent, c) {
+   if (agent !== "claude") return c?.model ?? null;
+-  const has = (m, x) => (m.match ?? [m.id]).includes(x);
+   // What runs (the log's model) wins; the alias it was started with only tells which row of
+   // that model (Opus or Opus 1M), since the log names both alike.
+-  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => has(m, c.alias)) : null;
+-  const byModel = c?.model ? CLAUDE_MODELS.find((m) => has(m, c.model)) : null;
+-  const same = byAlias && (!c?.model || (byAlias.match ?? [byAlias.id]).some((x) => x.replace(/\[1m\]$/, "") === c.model));
++  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => isRow(m, c.alias)) : null;
++  const byModel = c?.model ? CLAUDE_MODELS.find((m) => isRow(m, c.model)) : null;
++  const same = byAlias && (!c?.model || familyOf(c.model) === byAlias.family);
+   return (same ? byAlias : byModel ?? byAlias)?.id ?? c?.model ?? null;
+ }
+ 
+diff --git a/mods/newspace/core/agents.js b/mods/newspace/core/agents.js
+index 4637d6e..be7e6e0 100644
+--- a/mods/newspace/core/agents.js
++++ b/mods/newspace/core/agents.js
+@@ -4,15 +4,26 @@
+ // Shared core: the source is core/agents.js; bin/sync-shared copies it into the mods in lib/COPIES.
+ export const NAMES = { claude: "Claude Code", codex: "Codex" };
+ 
+-// Claude Code's current models, as its /model menu offers them. `id` is what --model gets;
+-// `match` the names a running agent may report for it.
++// Claude Code's models, one row per family. `id` is the alias --model gets, which Claude Code
++// resolves to that family's latest model, so no version is written here. A running agent's
++// model ("claude-fable-5-2") belongs to the row of its family; [1m] ones to the 1M row.
+ const CLAUDE_MODELS = [
+-  { id: "opus", name: "Opus 5.5", match: ["opus", "claude-opus-5-5"] },
+-  { id: "opus[1m]", name: "Opus 5.5 · 1M", match: ["opus[1m]", "claude-opus-5-5[1m]"] },
+-  { id: "claude-fable-5-1", name: "Fable 5.1", match: ["fable", "claude-fable-5-1"] },
+-  { id: "sonnet", name: "Sonnet 5.5", match: ["sonnet", "claude-sonnet-5-5"] },
+-  { id: "haiku", name: "Haiku 5.5", match: ["haiku", "claude-haiku-5-5"] },
++  { id: "opus", name: "Opus", family: "opus" },
++  { id: "opus[1m]", name: "Opus · 1M", family: "opus", big: true },
++  { id: "fable", name: "Fable", family: "fable" },
++  { id: "sonnet", name: "Sonnet", family: "sonnet" },
++  { id: "haiku", name: "Haiku", family: "haiku" },
+ ];
++// "claude-fable-5-2" or "fable" -> "fable"
++const familyOf = (x) => /^claude-([a-z]+)-/.exec(x ?? "")?.[1] ?? (x ?? "").replace(/\[1m\]$/, "");
++// Whether a name an agent reports (an alias or a full model id) is this row's.
++const isRow = (m, x) => x === m.id || (/^claude-/.test(x ?? "") && familyOf(x) === m.family && x.endsWith("[1m]") === Boolean(m.big));
++// The effort Claude's modelSettings gives a family: its newest model's entry, as the alias runs that one.
++function familyEffort(per, family) {
++  const keys = Object.keys(per ?? {}).filter((k) => /^claude-/.test(k) && familyOf(k) === family && per[k] != null)
++    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
++  return keys.length ? per[keys[keys.length - 1]] : null;
++}
+ const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+ // Permission modes as each CLI has them (Claude: --permission-mode, or
+ // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
+@@ -162,7 +173,7 @@ export function contextWords(c) {
+ export function menuFor(agent, dflt, current = null) {
+   if (agent === "claude") {
+     const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
+-      defaultEffort: dflt?.per?.[m.match[1].replace(/\[1m\]$/, "")] ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
++      defaultEffort: familyEffort(dflt?.per, m.family) ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
+     // a model typed by id (an older one it still takes) stays in the list while it runs
+     if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
+     return { name: NAMES.claude, perms: PERMS.claude, models };
+@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+ // The picker row that is what runs now (`c` from current()), or the model as it is.
+ export function rowFor(agent, c) {
+   if (agent !== "claude") return c?.model ?? null;
+-  const has = (m, x) => (m.match ?? [m.id]).includes(x);
+   // What runs (the log's model) wins; the alias it was started with only tells which row of
+   // that model (Opus or Opus 1M), since the log names both alike.
+-  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => has(m, c.alias)) : null;
+-  const byModel = c?.model ? CLAUDE_MODELS.find((m) => has(m, c.model)) : null;
+-  const same = byAlias && (!c?.model || (byAlias.match ?? [byAlias.id]).some((x) => x.replace(/\[1m\]$/, "") === c.model));
++  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => isRow(m, c.alias)) : null;
++  const byModel = c?.model ? CLAUDE_MODELS.find((m) => isRow(m, c.model)) : null;
++  const same = byAlias && (!c?.model || familyOf(c.model) === byAlias.family);
+   return (same ? byAlias : byModel ?? byAlias)?.id ?? c?.model ?? null;
+ }
+ 
+diff --git a/mods/shepherdr-settings/core/agents.js b/mods/shepherdr-settings/core/agents.js
+index 4637d6e..be7e6e0 100644
+--- a/mods/shepherdr-settings/core/agents.js
++++ b/mods/shepherdr-settings/core/agents.js
+@@ -4,15 +4,26 @@
+ // Shared core: the source is core/agents.js; bin/sync-shared copies it into the mods in lib/COPIES.
+ export const NAMES = { claude: "Claude Code", codex: "Codex" };
+ 
+-// Claude Code's current models, as its /model menu offers them. `id` is what --model gets;
+-// `match` the names a running agent may report for it.
++// Claude Code's models, one row per family. `id` is the alias --model gets, which Claude Code
++// resolves to that family's latest model, so no version is written here. A running agent's
++// model ("claude-fable-5-2") belongs to the row of its family; [1m] ones to the 1M row.
+ const CLAUDE_MODELS = [
+-  { id: "opus", name: "Opus 5.5", match: ["opus", "claude-opus-5-5"] },
+-  { id: "opus[1m]", name: "Opus 5.5 · 1M", match: ["opus[1m]", "claude-opus-5-5[1m]"] },
+-  { id: "claude-fable-5-1", name: "Fable 5.1", match: ["fable", "claude-fable-5-1"] },
+-  { id: "sonnet", name: "Sonnet 5.5", match: ["sonnet", "claude-sonnet-5-5"] },
+-  { id: "haiku", name: "Haiku 5.5", match: ["haiku", "claude-haiku-5-5"] },
++  { id: "opus", name: "Opus", family: "opus" },
++  { id: "opus[1m]", name: "Opus · 1M", family: "opus", big: true },
++  { id: "fable", name: "Fable", family: "fable" },
++  { id: "sonnet", name: "Sonnet", family: "sonnet" },
++  { id: "haiku", name: "Haiku", family: "haiku" },
+ ];
++// "claude-fable-5-2" or "fable" -> "fable"
++const familyOf = (x) => /^claude-([a-z]+)-/.exec(x ?? "")?.[1] ?? (x ?? "").replace(/\[1m\]$/, "");
++// Whether a name an agent reports (an alias or a full model id) is this row's.
++const isRow = (m, x) => x === m.id || (/^claude-/.test(x ?? "") && familyOf(x) === m.family && x.endsWith("[1m]") === Boolean(m.big));
++// The effort Claude's modelSettings gives a family: its newest model's entry, as the alias runs that one.
++function familyEffort(per, family) {
++  const keys = Object.keys(per ?? {}).filter((k) => /^claude-/.test(k) && familyOf(k) === family && per[k] != null)
++    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
++  return keys.length ? per[keys[keys.length - 1]] : null;
++}
+ const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+ // Permission modes as each CLI has them (Claude: --permission-mode, or
+ // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
+@@ -162,7 +173,7 @@ export function contextWords(c) {
+ export function menuFor(agent, dflt, current = null) {
+   if (agent === "claude") {
+     const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
+-      defaultEffort: dflt?.per?.[m.match[1].replace(/\[1m\]$/, "")] ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
++      defaultEffort: familyEffort(dflt?.per, m.family) ?? dflt?.effort ?? null, fast: m.id.startsWith("opus") }));
+     // a model typed by id (an older one it still takes) stays in the list while it runs
+     if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
+     return { name: NAMES.claude, perms: PERMS.claude, models };
+@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+ // The picker row that is what runs now (`c` from current()), or the model as it is.
+ export function rowFor(agent, c) {
+   if (agent !== "claude") return c?.model ?? null;
+-  const has = (m, x) => (m.match ?? [m.id]).includes(x);
+   // What runs (the log's model) wins; the alias it was started with only tells which row of
+   // that model (Opus or Opus 1M), since the log names both alike.
+-  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => has(m, c.alias)) : null;
+-  const byModel = c?.model ? CLAUDE_MODELS.find((m) => has(m, c.model)) : null;
+-  const same = byAlias && (!c?.model || (byAlias.match ?? [byAlias.id]).some((x) => x.replace(/\[1m\]$/, "") === c.model));
++  const byAlias = c?.alias ? CLAUDE_MODELS.find((m) => isRow(m, c.alias)) : null;
++  const byModel = c?.model ? CLAUDE_MODELS.find((m) => isRow(m, c.model)) : null;
++  const same = byAlias && (!c?.model || familyOf(c.model) === byAlias.family);
+   return (same ? byAlias : byModel ?? byAlias)?.id ?? c?.model ?? null;
+ }
+ 

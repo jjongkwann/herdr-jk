@@ -1,0 +1,60 @@
+Subject: Chat: paste files and images from the macOS clipboard (osascript), not only Wayland's
+Owner: shepherdr
+Versions: >=3.1.5 <3.1.29
+
+diff --git a/mods/chat/attach.js b/mods/chat/attach.js
+index 7d35a2b..4a4eb54 100644
+--- a/mods/chat/attach.js
++++ b/mods/chat/attach.js
+@@ -3,15 +3,16 @@
+ // image path into an image). An agent on another machine gets a copy there first (`hc put`).
+ // Pasted images are kept in data/chat-attach until the person sends or removes them.
+ 
+-import { exec, hc, appHome } from "herdr";
++import { exec, hc, appHome, window } from "herdr";
+ import * as fs from "fs/promises";
+ 
+ const IMAGE = /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i;
+ const base = (p) => String(p).split("/").filter(Boolean).pop() ?? p;
+ export const isImage = (p) => IMAGE.test(p);
+ 
+-// The clipboard's files or image, here (Wayland). [{ path, name, image, temp }] or [].
++// The clipboard's files or image, here (Wayland, or macOS). [{ path, name, image, temp }] or [].
+ export async function fromClipboard() {
++  if (window()?.platform === "macos") return fromMacClipboard();
+   const types = (await exec("sh", ["-c", "wl-paste --list-types 2>/dev/null"]).catch(() => null))?.stdout?.split("\n") ?? [];
+   if (types.includes("text/uri-list")) {
+     const r = await exec("sh", ["-c", "wl-paste -n -t text/uri-list 2>/dev/null"]);
+@@ -25,6 +26,32 @@ export async function fromClipboard() {
+   return r.stdout.trim() === "ok" ? [{ path: `${dir}/${name}`, name, image: true, temp: true }] : [];
+ }
+ 
++// macOS (osascript, JavaScript): prints the copied files' paths, one per line, or "image" once
++// the clipboard's image is written as a PNG to argv[0]. Nothing for text.
++const MAC_CLIP = `ObjC.import("AppKit");
++function run(argv) {
++  const pb = $.NSPasteboard.generalPasteboard;
++  const urls = pb.readObjectsForClassesOptions($([$.NSURL]), $({ NSPasteboardURLReadingFileURLsOnlyKey: true }));
++  if (urls.count > 0) return urls.js.map((u) => u.path.js).join("\\n");
++  let data = pb.dataForType($.NSPasteboardTypePNG);
++  if (data.isNil()) {
++    if (!$.NSImage.canInitWithPasteboard(pb)) return "";
++    const img = $.NSImage.alloc.initWithPasteboard(pb);
++    const rep = img.isNil() ? img : $.NSBitmapImageRep.imageRepWithData(img.TIFFRepresentation);
++    if (rep.isNil()) return "";
++    data = rep.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $());
++  }
++  return !data.isNil() && data.length > 0 && data.writeToFileAtomically(argv[0], true) ? "image" : "";
++}`;
++async function fromMacClipboard() {
++  const dir = `${appHome()}/data/chat-attach`;
++  const name = `pasted-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "")}.png`;
++  await exec("mkdir", ["-p", dir]);
++  const out = (await exec("osascript", ["-l", "JavaScript", "-e", MAC_CLIP, `${dir}/${name}`]).catch(() => null))?.stdout?.trim() ?? "";
++  if (out === "image") return [{ path: `${dir}/${name}`, name, image: true, temp: true }];
++  return paths(out.split("\n").filter((l) => l.startsWith("/")));
++}
++
+ // Dropped or pasted file paths as attachments.
+ export const paths = (list) => list.filter(Boolean).map((p) => ({ path: p, name: base(p), image: isImage(p), temp: false }));
+ 

@@ -12,7 +12,7 @@
 
 This is [jjongkwann/herdr-jk](https://github.com/jjongkwann/herdr-jk). It started as a copy of [shafiqimtiaz/herdr-omarchy](https://github.com/shafiqimtiaz/herdr-omarchy), Shafiq Imtiaz's Omarchy layout for Herdr, and has since grown its own features for one person's Mac. The look, the themes and the wallpapers come from [Omarchy](https://github.com/basecamp/omarchy) by Basecamp (MIT, see [`LICENSE-omarchy`](LICENSE-omarchy)).
 
-The repo holds the `omarchy` layout and its `omarchy-*` mods. Terminals and coding agents sit in rounded, see-through tiles over a wallpaper. The sidebar shows which spaces and agents are busy, the top bar shows how much AI quota is left, and a side panel holds your files, Git changes, the commit graph, pull requests and Shepherdr's tasks. From upstream it keeps Omarchy's themes, wallpapers and theme switcher, the restyled palette, Settings and mod manager, and `ctrl-alt-shift-t` to reopen a closed tab in place.
+The repo holds the `omarchy` layout and its `omarchy-*` mods, plus `patches/`, the local fixes to installed mods it doesn't own. Terminals and coding agents sit in rounded, see-through tiles over a wallpaper. The sidebar shows which spaces and agents are busy, the top bar shows how much AI quota is left, and a side panel holds your files, Git changes, the commit graph, pull requests and Shepherdr's tasks. From upstream it keeps Omarchy's themes, wallpapers and theme switcher, the restyled palette, Settings and mod manager, and `ctrl-alt-shift-t` to reopen a closed tab in place.
 
 ## What differs from upstream
 
@@ -53,6 +53,8 @@ These upstream features were merged by the recent tasks and fitted to the change
 | `herdr-sim` | [jjongkwann/herdr-sim](https://github.com/jjongkwann/herdr-sim) | The Simulator panel |
 | `chat`, `tasks`, `artifacts`, `task-*`, `new-menu-tasks` | [Shepherdr](https://github.com/eliasstravik/shepherdr) | Chat panes and the Chat \| Terminal switch, the Tasks and Artifacts panels, and the tab strip's `+` menu |
 | `reviewer` | Vytas Gavelis's review mod (MIT) | Review in the Git panel |
+
+Fixes made to the installed copies of these mods (pr-flow's place, agy workers in Shepherdr's tasks) are kept in [`patches/`](patches/README.md), so they can be applied again after an update.
 
 ## Install
 
@@ -146,6 +148,8 @@ The repo has the same structure as a Herdr home folder:
 | `backgrounds/omarchy/` | The wallpapers of each theme |
 | `keys.json` | The layout keys |
 | `tests/` | Node tests for the mods' logic |
+| `patches/` | Local fixes to installed mods this repo doesn't own, as diffs, with the version each is for ([`patches/README.md`](patches/README.md)) |
+| `scripts/patches.mjs` | Shows which patches an install has (`status`) and applies the missing ones (`apply`) |
 | `RECIPE.md` | The full brief. An agent can build the layout again from it. |
 
 ## Development
@@ -163,6 +167,13 @@ herdr-app check mods/omarchy-settings
 ```
 
 [`DEVELOPMENT.md`](DEVELOPMENT.md) shows which file to change for each part of the layout, and [`AGENTS.md`](AGENTS.md) says how to work in this repo.
+
+After `shepherdr update` or reinstalling a mod, check the local patches:
+
+```sh
+node scripts/patches.mjs status     # ~/.config/herdr-app; --root <dir> for another
+node scripts/patches.mjs apply      # applies the missing ones that apply cleanly
+```
 
 > [!TIP]
 > Your edits in this repo do not change the copy in `~/.config/herdr-app`. Copy the changed files there to see them in Herdr.
