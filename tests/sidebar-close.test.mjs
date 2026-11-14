@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { chatAgents, withParked, spacesWithChats } from "../mods/omarchy-agents/parked.js";
+import { arrange } from "../mods/omarchy-spaces/order.js";
 
 // Elements that remember their id, children, handlers, tooltip and the style calls made on them.
 const NODE = Symbol("node");
@@ -36,7 +37,7 @@ const texts = (tree) => walk(tree).flatMap((n) => n.kids.filter((k) => typeof k 
 
 function load(file, host) {
   const body = readFileSync(file, "utf8").replace(/^import .*;\n/gm, "").replace(/^export function/gm, "function").replace("export default class", "return class");
-  const deps = { View: class {}, div: el, image: el, svg: el, v_flex: el, h_flex: el, localStorage: { getItem: () => null, setItem() {}, removeItem() {} }, chatAgents, withParked, spacesWithChats, sweep() {}, ...host };
+  const deps = { View: class {}, div: el, image: el, svg: el, v_flex: el, h_flex: el, localStorage: { getItem: () => null, setItem() {}, removeItem() {} }, chatAgents, withParked, spacesWithChats, arrange, sweep() {}, ...host };
   return Function(...Object.keys(deps), body)(...Object.values(deps));
 }
 
@@ -123,10 +124,11 @@ test("a narrow sidebar gives the name the row and hides how long ago", () => {
 });
 
 const spaceLists = {
-  // Space two's only agent is parked behind its chat pane and working.
+  // Space two's only agent is parked behind its chat pane and working, so it is listed
+  // first, where the sidebar keeps it: no space.move runs before the clicks.
   spaces: () => [
-    { id: "s1", name: "one", status: null, active: true, folder: "/w/one", tabs: [{ id: "a", index: 1, status: null }] },
     { id: "s2", name: "two", status: null, folder: "/w/two", tabs: [{ id: "b", index: 1, status: null }] },
+    { id: "s1", name: "one", status: null, active: true, folder: "/w/one", tabs: [{ id: "a", index: 1, status: null }] },
     { id: "mini/s1", name: "far", machine: "mini", status: "idle", folder: "/home/u", tabs: [{ id: "mini/x", index: 1, status: "idle" }] },
   ],
   panes: () => [{ pane: "chat1", terminal: null, mod: "chat", tab: "b" }],
