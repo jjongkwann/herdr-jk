@@ -1,8 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { isLocalUrl, activeTab, errorsFrom } from "../mods/omarchy-browser/page.mjs";
-import { inspectorUrl, viewport } from "../mods/omarchy-browser/devtools.mjs";
+import { inspectorUrl, viewport, browserRoot } from "../mods/omarchy-browser/devtools.mjs";
 import * as viewer from "../mods/omarchy-pane/viewer.js";
 
 const { isViewer, isDevtools, kindOf, devtoolsArgv, devtoolsKeyPane, onScreen, errorLabel, pageShown, errorsPopup, saveFolder, reloads, Burst } = viewer;
@@ -68,6 +71,47 @@ test("the DevTools page is the pane's picture area in screen points", () => {
 });
 
 // ---- viewer.js ----
+
+// A home whose Shepherdr data has (moved) or hasn't moved to Shepherdr's own folders (its LAYOUT file says 2).
+function shepHome(moved) {
+  const home = mkdtempSync(join(tmpdir(), "omarchy-browser-"));
+  if (moved) {
+    mkdirSync(join(home, ".local/share/shepherdr"), { recursive: true });
+    writeFileSync(join(home, ".local/share/shepherdr/LAYOUT"), "2\n");
+  }
+  return home;
+}
+
+test("the browser folder is Shepherdr's state folder once its data moved, else ~/.herdr/browser", () => {
+  const old = shepHome(false);
+  assert.equal(browserRoot(old, {}), join(old, ".herdr/browser"));
+  const home = shepHome(true);
+  assert.equal(browserRoot(home, {}), `${home}/.local/state/shepherdr/browser`);
+  assert.equal(browserRoot(home, { XDG_DATA_HOME: `${home}/.local/share`, XDG_STATE_HOME: "/x/state" }), "/x/state/shepherdr/browser");
+  assert.equal(browserRoot(home, { SHEPHERDR_HOME: "/nowhere" }), join(home, ".herdr/browser"));
+  // Rolled back: the old place again.
+  mkdirSync(join(home, ".herdr"), { recursive: true });
+  writeFileSync(join(home, ".herdr/.layout-rollback"), "");
+  assert.equal(browserRoot(home, {}), join(home, ".herdr/browser"));
+});
+
+test("view.sh keeps the viewer's heartbeat in the browser folder the viewer reads", () => {
+  for (const moved of [false, true]) {
+    const home = shepHome(moved);
+    // The viewer, agent-browser and node are stand-ins: node exits at once, as a viewer that quit.
+    mkdirSync(join(home, "app/bin"), { recursive: true });
+    writeFileSync(join(home, "app/bin/herdr-browser-view"), "");
+    mkdirSync(join(home, "bin"));
+    for (const name of ["agent-browser", "node"]) {
+      writeFileSync(join(home, "bin", name), "#!/bin/sh\nexit 0\n");
+      chmodSync(join(home, "bin", name), 0o755);
+    }
+    const r = spawnSync("sh", ["mods/omarchy-browser/view.sh"], { env: { HOME: home, PATH: `${home}/bin:/usr/bin:/bin`, HERDR_APP_HOME: join(home, "app") } });
+    assert.equal(r.status, 0, String(r.stderr));
+    assert.ok(existsSync(join(browserRoot(home, {}), "omarchy.view")), moved ? "moved" : "not moved");
+    assert.equal(existsSync(join(home, ".herdr/browser")), !moved);
+  }
+});
 
 test("the viewer pane is view.sh, or herdr-browser-view on @omarchy only", () => {
   assert.ok(isViewer({ argv: ["sh", "/Users/me/.config/herdr-app/mods/omarchy-browser/view.sh", "t5"] }));
