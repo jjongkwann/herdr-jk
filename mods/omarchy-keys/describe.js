@@ -15,6 +15,7 @@ const FIXED = {
   "omarchy-tabs.pane-back": ["Panes", "Back to the previous pane"],
   "omarchy-tabs.pane-forward": ["Panes", "Forward to the next pane"],
   "omarchy-pane.toggle": ["Panes", "Switch pane between Chat and Terminal"],
+  "omarchy-pane.devtools": ["Panes", "Open or close DevTools below the Browser pane"],
   "mod.open:equal-width": ["Panes", "Make panes equal width"],
   "agent.next": ["Agents", "Next agent"], "agent.prev": ["Agents", "Previous agent"],
   "terminal.open": ["Terminal", "New terminal"], "terminal.copy": ["Terminal", "Copy"],

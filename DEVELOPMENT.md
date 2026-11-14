@@ -45,6 +45,8 @@ Each folder under `mods/` is a self-contained Herdr mod. `main.js` is its entry 
 | Live dictation helper (macOS 26+) | `mods/omarchy-voice/live.swift` |
 | Dictation bubble and where it sits | `mods/omarchy-voice-live/main.js`, `mods/omarchy-voice-live/spot.js` |
 | Shared browser: open command, agent script, viewer | `mods/omarchy-browser/open.js`, `mods/omarchy-browser/ab`, `mods/omarchy-browser/view.sh` |
+| Browser pane header: the page's error count and its popup, reload on save | `mods/omarchy-pane/viewer.js`, `mods/omarchy-pane/main.js`, `mods/omarchy-browser/page.mjs` |
+| DevTools pane below the Browser pane, its button and key | `mods/omarchy-browser/devtools.mjs`, `mods/omarchy-pane/viewer.js`, `mods/omarchy-pane/main.js` |
 | Theme switcher and its previews | `mods/omarchy-themes/main.js`, `mods/omarchy-themes/previews/` |
 
 ## Check changes
