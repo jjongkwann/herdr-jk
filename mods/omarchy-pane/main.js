@@ -796,8 +796,8 @@ export default class Pane extends View {
     if (viewer) {
       // Back on screen: look at the page now rather than at the next tick.
       const on = onScreen(self, spaces(), panes());
-      if (on && !this.onScreen) cx.timer.after(0, (cx) => this.lookAtPage(cx));
-      this.onScreen = on;
+      if (on && !this.shown) cx.timer.after(0, (cx) => this.lookAtPage(cx));
+      this.shown = on;
       const dir = this.onSave ? this.saveDir(self) : null;
       if (dir && dir !== this.watching && dir !== this.unwatchable) cx.timer.after(0, (cx) => this.watchSaves(this.me(), cx));
     }
