@@ -6,7 +6,8 @@ import { H, DAY } from '../mods/omarchy-ai-usage/time.js';
 
 // `system.platform` is what Herdr's os.platform() says ("linux" unless given); `system.security`
 // answers each `security` call with an { code, stdout } (or throws, as exec does when it can't run).
-function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/test', system = {}) {
+// `host` adds or replaces what main.js gets (elements, props, theme) for render tests.
+function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/test', system = {}, host = {}) {
   const state = new Map();
   const requests = [];
   const commands = [];
@@ -37,7 +38,7 @@ function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/
   const providerSource = readFileSync(new URL('../mods/omarchy-ai-usage/providers.js', import.meta.url), 'utf8')
     .replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
   const providers = Function(...Object.keys(dependencies), 'H', 'DAY', `${providerSource}\nreturn { PROVIDERS, sourcesFor, alwaysSources, fetchUsage };`)(...Object.values(dependencies), H, DAY);
-  Object.assign(dependencies, providers);
+  Object.assign(dependencies, providers, host);
   const source = readFileSync(new URL('../mods/omarchy-ai-usage/main.js', import.meta.url), 'utf8')
     .replace(/^import .*;\n/gm, '').replace('export default class', 'class');
   const { refreshOne, refreshAll, AiUsage } = Function(...Object.keys(dependencies), `${source}\nreturn { refreshOne, refreshAll, AiUsage };`)(...Object.values(dependencies));
@@ -398,4 +399,57 @@ test('periodic ticks keep refreshing and redrawing while a forced Copilot fetch 
     await Promise.all([...bar.tasks, forced]);
     Date.now = originalNow;
   }
+});
+
+// Elements that remember their id, children, handlers and tooltip.
+const NODE = Symbol('node');
+function el() {
+  const node = { id: null, kids: [], on: {}, tip: null };
+  const self = new Proxy(node, {
+    get(_t, prop) {
+      if (prop === NODE) return node;
+      return (...args) => {
+        if (prop === 'id') node.id = args[0];
+        else if (prop === 'child') node.kids.push(args[0]);
+        else if (prop === 'children') node.kids.push(...args[0]);
+        else if (prop === 'when') return args[0] ? args[1](self) : self;
+        else if (prop === 'tooltip') node.tip = args[0];
+        else if (prop === 'on_click' || prop === 'on_mouse_down') node.on[prop] = args.at(-1);
+        return self;
+      };
+    },
+  });
+  return self;
+}
+const walk = (e, out = []) => {
+  const n = e?.[NODE];
+  if (!n) return out;
+  out.push(n);
+  for (const k of n.kids) walk(k, out);
+  return out;
+};
+
+test('in the top bar only the meters open the popup, so the rest of the block drags the window', () => {
+  const overlays = [];
+  let stopped = 0;
+  const h = usageHarness({}, {}, 200, '/home/test', {}, {
+    div: el, h_flex: el, v_flex: el, image: el, svg: el,
+    props: () => ({ compact: true }), theme: () => new Proxy({}, { get: () => '#888888' }),
+    focused: () => null, settings: () => ({ zoom: 1 }), openOverlay: o => overlays.push(o),
+  });
+  h.state.set('omarchy-ai-usage.shown', { list: [{ id: 'codex.codex', provider: 'codex', label: 'Codex', icon: 'codex.svg' }], idle: false });
+  const cx = { timer: { every() {} }, spawn() {}, notify() {}, stop_propagation() { stopped++; } };
+  const view = new h.AiUsage();
+  view.init({}, cx);
+  const nodes = walk(view.render(cx));
+  const root = nodes.find(n => n.id === 'root'), usage = nodes.find(n => n.id === 'usage');
+  assert.deepEqual(Object.keys(root.on), [], 'the block itself takes no presses');
+  assert.deepEqual(Object.keys(usage.on).sort(), ['on_click', 'on_mouse_down']);
+  assert.ok(nodes.every(n => n.tip === null), 'the bar has no tooltip');
+
+  usage.on.on_mouse_down({ bounds: { x: 900, y: 0, width: 260, height: 30 } }, cx);
+  usage.on.on_click({}, cx);
+  assert.equal(stopped, 1, 'a press on the meters does not reach the window drag');
+  assert.equal(overlays.length, 1);
+  assert.equal(overlays[0].props.below, true);
 });
