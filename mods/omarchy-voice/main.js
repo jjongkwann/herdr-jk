@@ -143,8 +143,14 @@ export default class OmarchyVoice extends View {
   // The agent a chat pane talks to, and the key its drafts go under, as the chat works them out
   // (mods/chat/main.js: a terminal labelled herdr.chat=<pane>, or an Assistant's slot in shared
   // "coordinator.slots"; the key is herdr.chat.origin, else slot:<slot>, else the address).
+  // The label holds the pane's id on the terminal's own machine, so another machine's terminal is
+  // read with its "<machine>/" in front, as the app names that pane (an id already prefixed is kept).
   chatAgent(f, pane) {
-    const labelled = terminals().find((t) => t.labels?.["herdr.chat"] === pane);
+    const chatOf = (t) => {
+      const c = t.labels?.["herdr.chat"], m = t.address?.includes("/") ? t.address.split("/")[0] : null;
+      return m && c && !c.includes("/") ? `${m}/${c}` : c;
+    };
+    const labelled = terminals().find((t) => chatOf(t) === pane);
     const address = labelled?.address ?? f?.agent ?? null;
     const term = labelled ?? terminals().find((t) => t.address === address);
     const slot = Object.entries(shared("coordinator.slots") ?? {}).find(([, r]) => r?.pane === pane)?.[0];
