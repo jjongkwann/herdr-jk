@@ -54,7 +54,7 @@ These upstream features were merged by the recent tasks and fitted to the change
 | `chat`, `tasks`, `artifacts`, `task-*`, `new-menu-tasks` | [Shepherdr](https://github.com/eliasstravik/shepherdr) | Chat panes and the Chat \| Terminal switch, the Tasks and Artifacts panels, and the tab strip's `+` menu |
 | `reviewer` | Vytas Gavelis's review mod (MIT) | Review in the Git panel |
 
-Fixes made to the installed copies of these mods (pr-flow's place, agy workers in Shepherdr's tasks) are kept in [`patches/`](patches/README.md), so they can be applied again after an update.
+Fixes made to the installed copies of these mods (pr-flow's place, agy workers in Shepherdr's tasks, workers sent to Firefox while the task browser is off) are kept in [`patches/`](patches/README.md), so they can be applied again after an update.
 
 ## Install
 

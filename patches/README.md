@@ -3,7 +3,7 @@
 Fixes made to installed copies of mods and tools this repo doesn't own: Shepherdr's mods, pr-flow, and the like. An update (`shepherdr update`, a mod reinstall) overwrites the installed files, so each fix is kept here as a patch. After an update, `scripts/patches.mjs` shows which fixes the update removed, and the Assistant applies again the ones upstream still lacks.
 
 - Each patch is a unified diff with paths relative to the install root, `~/.config/herdr-app` (`mods/chat/record.ts`), one file per fix, grouped by owner and by the version it was made against (`shepherdr/3.1.34/…`).
-- Lines above the first `diff --git` are its header: `Subject`, `Owner` and `Versions`, the range of the owner's installed version it is for (`>=3.1.5 <3.1.29`, `>=3.1.34`, or `*`). The script reads Shepherdr's version from `bin/shepherdr` under the root. Owners with no version (the forks) use `*`.
+- Lines above the first `diff --git` are its header: `Subject`, `Owner` and `Versions`, the range of the owner's installed version it is for (`>=3.1.5 <3.1.29`, `>=3.1.34`, or `*`). The script reads Shepherdr's version from `bin/shepherdr` under the root. Owners with no version (the forks) use `*`. A patch for files outside `~/.config/herdr-app` adds `Root`, the install root its paths are relative to (`Root: ~/.config/herdr-core` for Shepherdr's templates); `--root <Root>=<dir>` points it at a scratch copy (`--root ~/.config/herdr-core=/tmp/core`), as `--root <dir>` does for the default root.
 - Code changes to the person's own forks (pr-flow, herdr-sim, files-plus) belong in those repos. Only changes made at install time are patches here.
 
 ## Patches
@@ -27,6 +27,21 @@ Install root for every row: `~/.config/herdr-app`. Every patch below is applied 
 - **Herdr's built-in mods** (tabs, spaces, files, pane, …, Herdr 0.1.15). Each of the 333 files Herdr's `installed.json` lists for them matches, byte for byte, the copy embedded in `/Applications/Herdr.app/Contents/MacOS/Herdr`. Herdr also moves an edited shipped mod to `<name>-edited` at its next start and restores its own copy, so a built-in can't keep a local edit. To change one, clone it (Duplicate mod) instead of patching it.
 - **files-plus** is the same as `herdr-files-plus` `main`. **herdr-sim** and **herdr-sim-screen** are the same as `herdr-sim` `pin-serve-sim`, apart from the copied `LICENSE` and the simulator's own `panel-*.jpg` frames. pr-flow has the `LICENSE` copy and the `mod.json` patch above.
 - **Fixed upstream, no patch:** under 3.1.5, `launch.py`'s low-priority wrapper printed an `oom_score_adj` error on macOS (`echo 500 > /proc/self/oom_score_adj` before its `2>/dev/null`). 3.1.29 wraps it in `{ …; } 2>/dev/null` (SHEP-170), so 3.1.34 has the fix.
+
+## Task browser off (temporary)
+
+Since 2026-11-14 agents don't use agent-browser's Chrome for Testing: they use Firefox Developer Edition through the `firefox-agent` MCP tools until Herdr ships a browser of its own. These patches stop Shepherdr from telling workers to use the task browser. agent-browser, `herdr-browser` and Shepherdr's browser code stay, and the tick still closes a task's browser left open. To bring the task browser back, reverse them in their roots (`git apply -R`) and delete them here.
+
+| Patch | Root | Target | What it changes |
+| --- | --- | --- | --- |
+| `shepherdr/3.1.34/tasks-browser-firefox` | `~/.config/herdr-app` | `mods/tasks/bin/herdr_task/browsers.py`, `launch.py` | A worker's brief says there is no task browser and to use firefox-agent for a page, in place of its `herdr-browser` line. `herdr-browser` commands are off a worker's allow list (`own_rules`, `own_command`). `HERDR_BROWSER_TASK` stays: the reviewer's label uses it. |
+| `shepherdr/3.1.34/artifact-preview-firefox` | `~/.config/herdr-app` | `mods/artifacts/bin/herdr-artifact` | `herdr-artifact preview` says to open its link in Firefox with firefox-agent, in place of `herdr-browser set viewport …` commands. |
+| `shepherdr/3.1.34/worker-template-firefox` | `~/.config/herdr-core` | `templates/worker.md` | The Browser bullet and the artifact check point to firefox-agent (`tab_create` in the background, `read_page`, `screenshot`, `tab_close`). |
+
+- firefox-agent can't set a phone's width, and Firefox won't show the artifact viewer in an iframe, so the template and `preview` ask for a desktop screenshot and for a note when the phone view wasn't checked.
+- `shepherdr update` keeps an edited template and writes Shepherdr's new one beside it as `worker.md.new`. Move that in and apply `worker-template-firefox` to it again.
+- `assistant.md` and `reviewer.md` have no `herdr-browser` instructions (the Assistant's artifact check says "a browser"), so they have no patch.
+- Shepherdr's own Task browser switch (Settings, add-ons; `"browser"` in `everywhere.off`) would also hide the Browser view in every layout and stop `shepherdr install`, `update` and `doctor` from fetching agent-browser and Chrome for Testing, but with it off the tick no longer closes task browsers left open. These patches work with it on or off; it stays on.
 
 ## After an update
 

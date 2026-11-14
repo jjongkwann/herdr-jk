@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { classify, compareVersions, inRange, parseHeader, patchFiles } from '../scripts/patches.mjs';
+import { classify, compareVersions, expandRoot, inRange, parseHeader, patchFiles, rootFor } from '../scripts/patches.mjs';
 
 const PATCH = `Subject: Chat: macOS clipboard
 Owner: shepherdr
@@ -22,8 +22,19 @@ new file mode 100644
 `;
 
 test('reads the header above the first diff', () => {
-  assert.deepEqual(parseHeader(PATCH), { subject: 'Chat: macOS clipboard', owner: 'shepherdr', versions: '>=3.1.5 <3.1.29' });
+  assert.deepEqual(parseHeader(PATCH), { subject: 'Chat: macOS clipboard', owner: 'shepherdr', versions: '>=3.1.5 <3.1.29', root: null });
   assert.equal(parseHeader('diff --git a/x b/x\n').versions, '*');
+  assert.equal(parseHeader(`Root: ~/.config/herdr-core\n\n${PATCH}`).root, '~/.config/herdr-core');
+});
+
+test('a patch applies under its Root, which --root <Root>=<dir> can move; else under the default root', () => {
+  const home = '/Users/me', app = '/Users/me/.config/herdr-app';
+  assert.equal(expandRoot('~/.config/herdr-core', home), '/Users/me/.config/herdr-core');
+  assert.equal(expandRoot('/srv/x/', home), '/srv/x');
+  assert.equal(rootFor({ root: null }, app, {}, home), app);
+  assert.equal(rootFor({ root: '~/.config/herdr-core' }, app, {}, home), '/Users/me/.config/herdr-core');
+  assert.equal(rootFor({ root: '~/.config/herdr-core' }, app, { '/Users/me/.config/herdr-core': '/tmp/core' }, home), '/tmp/core');
+  assert.equal(rootFor({ root: '~/.config/herdr-core' }, '/tmp/app', {}, home), '/Users/me/.config/herdr-core', '--root <dir> moves only the default');
 });
 
 test('lists the files a patch changes, and the ones it adds', () => {
