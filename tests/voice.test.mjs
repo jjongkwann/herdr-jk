@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { MODEL, pickModel, missing, clean, recorderTrouble, whisperTrouble, screenTerms } from '../mods/omarchy-voice/voice.js';
 
 test('voice picks the turbo model first and skips encoders and partial downloads', () => {
@@ -38,4 +39,24 @@ test('voice takes the Latin-letter terms a terminal shows, the most frequent fir
   // "git", "push" and "main" are short lowercase words: left out with the filler.
   assert.deepEqual(screenTerms(screen, 3), ['README.md', 'commit', 'origin']);
   assert.deepEqual(screenTerms('한글만 있는 화면'), []);
+});
+
+test('dictation into a chat finds its agent by the herdr.chat label, on another machine too', () => {
+  // main.js without its imports, given the host functions chatAgent uses.
+  const body = readFileSync('mods/omarchy-voice/main.js', 'utf8').replace(/^import .*;\n/gm, '').replace('export default class', 'return class');
+  const terminals = [
+    { address: 't1', labels: { 'herdr.chat': 'p1', 'herdr.chat.origin': 'o1' } },
+    // Shepherdr 3.1.34 labels another machine's pane with its id there; earlier ones wrote the app's id.
+    { address: 'mini/t2', labels: { 'herdr.chat': 'p2' } },
+    { address: 'mini/t3', labels: { 'herdr.chat': 'mini/p3' } },
+  ];
+  const slots = { 'coord-1': { pane: 'p9' } };
+  const Voice = Function('View', 'terminals', 'shared', body)(class {}, () => terminals, (k) => (k === 'coordinator.slots' ? slots : undefined));
+  const voice = new Voice();
+  assert.deepEqual(voice.chatAgent(null, 'p1'), { agent: 't1', key: 'o1' });
+  assert.deepEqual(voice.chatAgent(null, 'mini/p2'), { agent: 'mini/t2', key: 'mini/t2' });
+  assert.deepEqual(voice.chatAgent(null, 'mini/p3'), { agent: 'mini/t3', key: 'mini/t3' });
+  // This computer's p2 is another pane than mini's.
+  assert.deepEqual(voice.chatAgent(null, 'p2'), { agent: null, key: null });
+  assert.deepEqual(voice.chatAgent(null, 'p9'), { agent: null, key: 'slot:coord-1' });
 });

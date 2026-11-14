@@ -34,7 +34,7 @@ herdr-app check mods/<name>       # each mod you changed
 - Each folder under `mods/` is a mod that installs on its own. `main.js` is its entry point, and it imports only files in its own folder.
 - Mods use `gpui-kit`, `gpui-base` and `herdr`. They also get `crypto` (`createHash`) and `os`; `os.platform()` returns `"macos"`, not `"darwin"`. `window()` is undefined under `herdr-app check`.
 - `parked.js` has one copy each in `omarchy-agents`, `omarchy-spaces` and `omarchy-tabs`. Keep the three identical; `tests/parked.test.mjs` checks it.
-- `omarchy-tabs/coordinator.js`, `live.js`, `spacelog.js` and `ui.js` are unchanged copies of Shepherdr's files in `~/.config/herdr-app/lib/`. `~/.config/herdr-app/bin/sync-shared` does not update them; copy them again when Shepherdr changes them.
+- `omarchy-tabs/coordinator.js`, `dirs.js`, `live.js`, `spacelog.js` and `ui.js` are unchanged copies of Shepherdr's files in `~/.config/herdr-app/lib/`, and `omarchy-tabs/core/paths.js` and `core/spaces.js` of its files in `~/.config/herdr-app/core/` (coordinator.js imports them). `~/.config/herdr-app/bin/sync-shared` does not update them; copy them again when Shepherdr changes them.
 - Put logic that needs tests in a file with no `herdr` imports (for example `omarchy-pane/assistant.js`, `omarchy-tabs/jump.js`, `omarchy-tabs/history.js`), so `node --test` can import it.
 - Shepherdr's installed mods in `~/.config/herdr-app/mods` are read-only references for the points where this repo meets them, such as the shared `chat.startreq` request, `coordinator.openreq`, and the chat's `data/chat-sendreq.json` with `chat.send`.
 

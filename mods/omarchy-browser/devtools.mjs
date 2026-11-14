@@ -11,7 +11,7 @@
 // when the pane goes: an open DevTools left behind could stop the agents' page on a breakpoint
 // nobody sees.
 import { execFile, spawn } from "node:child_process";
-import { existsSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -42,9 +42,21 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const APP = [process.env.HERDR_APP_HOME, join(HERE, "..", "..")].find((d) => d && existsSync(join(d, "bin", "herdr-browser")))
   ?? join(homedir(), ".config", "herdr-app");
 const BIN = join(APP, "bin", "herdr-browser");
-const BEAT = join(homedir(), ".herdr", "browser", "omarchy-devtools.view");
+// The browser folder, as bin/herdr-browser-view picks it: Shepherdr's state folder once this machine's data
+// moved there (Shepherdr 3.1.34's layout move), else the old ~/.herdr/browser. The viewer reads its heartbeat there.
+export function browserRoot(home = homedir(), env = process.env) {
+  const abs = (p) => (p && p.startsWith("/") ? p : null);
+  const one = abs(env.SHEPHERDR_HOME);
+  const data = one ? `${one}/data` : `${abs(env.XDG_DATA_HOME) ?? `${home}/.local/share`}/shepherdr`;
+  const state = one ? `${one}/state` : `${abs(env.XDG_STATE_HOME) ?? `${home}/.local/state`}/shepherdr`;
+  let layout = "";
+  try { layout = readFileSync(`${data}/LAYOUT`, "utf8"); } catch {}
+  return layout.trim().startsWith("2") && !existsSync(join(home, ".herdr", ".layout-rollback")) ? `${state}/browser` : join(home, ".herdr", "browser");
+}
+const ROOT = browserRoot();
+const BEAT = join(ROOT, "omarchy-devtools.view");
 // The DevTools pane opened last owns the DevTools browser: its pid.
-const OWNER = join(homedir(), ".herdr", "browser", "omarchy-devtools.owner");
+const OWNER = join(ROOT, "omarchy-devtools.owner");
 
 function browser(task, args, input) {
   return new Promise((resolve) => {
