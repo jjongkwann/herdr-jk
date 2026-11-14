@@ -3,12 +3,13 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { syncNames } from "./names.js";
 import { renderPaneHeader } from "./pane.js";
-import { spaces, panes, terminals, props, run, openOverlay, theme, shared, setShared, layout, exec, readTextFile, home, appHome, nextCommand, notify, focused } from "herdr";
+import { spaces, panes, terminals, props, run, openOverlay, theme, shared, setShared, layout, exec, readTextFile, home, appHome, nextCommand, notify, focused, settings } from "herdr";
 import { chatAgents, spacesWithChats } from "./parked.js";
 import { resumeCommand, argvOf } from "./reopen.js";
 import { coordinatorTab, openCoordinator } from "./coordinator.js";
 import { jump } from "./jump.js";
 import { PaneHistory, placeOf, SETTLE } from "./history.js";
+import { tabWidths, TAB_ICONS, NEW_TAB } from "./sizing.js";
 
 // The last closed tabs (newest last), kept across restarts for ctrl-alt-shift-t.
 const CLOSED = "omarchy-tabs.closed";
@@ -225,6 +226,12 @@ export default class Tabs extends View {
     }
     const space = withChats(allPanes, allTerminals, raw).find(p => p.active);
     const shown = space?.tabs ?? [];
+    // Compact tabs (sizing.js) share the strip's measured room and shrink toward TAB_MIN before it scrolls.
+    const { tab: tabW, active: tabA } = tabWidths(shown.length, this.room?.strip ?? 0, this.room?.panels ?? 0, Number(settings()?.zoom) || 1);
+    const measure = key => (size, cx) => {
+      this.room ??= {};
+      if (this.room[key] !== size.width) { this.room[key] = size.width; cx.notify(); }
+    };
     const stop = (_e, cx) => cx.stop_propagation();
     const f = t.foreground, idle = f + "0a", hov = f + "14", sel = f + "2e";
     // The strip's block may be rounded in the layout: its end cells follow, inside its border.
@@ -252,9 +259,11 @@ export default class Tabs extends View {
       const detail = multi
         ? agentPanes.map(p => `${p.program.name}: ${({ working: "working", blocked: "needs input", done: "done" })[p.status] ?? "idle"}`).join("\n")
         : [status, c.named && title && title !== c.name ? title : program?.name].filter(Boolean).join(" · ");
-      const icons = (multi ? programs.slice(0, 3) : [program]).filter(p => p?.icon);
-      return h_flex().id(`tab-${c.id}`).w(240).h_full().px(10).gap(7).rounded(0).when(i === 0, el => el.rounded_l(inner)).items_center().flex_none().text_size(12)
-        .tooltip(`${name}\n${detail}`)
+      // A narrow tab gives the icons' room to the name; the tooltip still names the agent.
+      const icons = (c.active ? tabA : tabW) < TAB_ICONS ? [] : (multi ? programs.slice(0, 3) : [program]).filter(p => p?.icon);
+      // The status word lives in the tooltip; the tab keeps only its dot or spinner.
+      return h_flex().id(`tab-${c.id}`).w(c.active ? tabA : tabW).h_full().px(8).gap(6).rounded(0).when(i === 0, el => el.rounded_l(inner)).items_center().flex_none().text_size(12)
+        .tooltip([name, detail].filter(Boolean).join("\n"))
         // The close button shows on the active tab and on the one under the pointer.
         .on_hover((over, cx) => { if (over) this.overTab = c.id; else if (this.overTab === c.id) this.overTab = null; cx.notify(); })
         // Matches the pane's focus frame.
@@ -270,10 +279,9 @@ export default class Tabs extends View {
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: space.id } } }); })
         .when(icons.length > 0, el => el.child(h_flex().flex_none().gap(6).children(icons.map(p => p.tint ? svg(p.icon).size(14).text_color(t.muted) : image(p.icon).size(14)))))
         .child(div().flex_1().min_w(0).truncate().child(c.zoomed ? `${name} Z` : name))
-        .when(Boolean(status), el => el.child(div().flex_none().text_size(10.5).text_color(t[c.status] ?? t.muted).child(status)))
         .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
         .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(0).bg(t[c.status])))
-        .when(c.active || this.overTab === c.id, el => el.child(div().id(`close-${c.id}`).flex_none().p(3).rounded(0).text_color(t.dim).hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(14))));
+        .when(c.active || this.overTab === c.id, el => el.child(div().id(`close-${c.id}`).flex_none().p(2).rounded(0).text_color(t.dim).hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(14))));
     };
     const root = layout();
     const panel = find(root, "panel"), body = find(root, "panel-body");
@@ -301,18 +309,18 @@ export default class Tabs extends View {
           }
         }).child(svg(icon).size(14)).child(label);
     };
-    return h_flex().size_full().min_w(0).gap(0).items_center().bg(t.chrome)
+    return h_flex().id("tab-strip").size_full().min_w(0).gap(0).items_center().bg(t.chrome).on_size_change(measure("strip"))
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
-      .child(h_flex().id("tab-scroll").max_w(shown.length * 241).flex_shrink(1).min_w(0).h_full().items_center().gap(0).overflow_x_scrollbar().children(shown.map(item)))
-      .child(div().id("tab-new").h_full().w(36).flex_none().flex().items_center().justify_center().rounded(0).border_r(1).border_color(t.border).bg(idle).text_color(t.dim)
+      .child(h_flex().id("tab-scroll").max_w(Math.max(0, shown.length - 1) * tabW + (shown.length ? tabA : 0)).flex_shrink(1).min_w(0).h_full().items_center().gap(0).overflow_x_scrollbar().children(shown.map(item)))
+      .child(div().id("tab-new").h_full().w(NEW_TAB).flex_none().flex().items_center().justify_center().rounded(0).border_r(1).border_color(t.border).bg(idle).text_color(t.dim)
         .hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop)
         // Shepherdr's + menu where it is installed, else Herdr's own (a machine without Shepherdr).
         .on_click(() => openOverlay(this.mods?.["new-menu-tasks"]
           ? { mod: "new-menu-tasks", kind: "popup", width: 250, height: 543 }
           : { mod: "new-menu", kind: "popup", width: 250, height: 512 })).child("+"))
       .child(div().flex_1())
-      .child(h_flex().h_full().gap(0).items_center().flex_none()
+      .child(h_flex().id("tab-panels").h_full().gap(0).items_center().flex_none().on_size_change(measure("panels"))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Git", "mods/changes/changes.svg")))
       .when(enabled.includes("herdr-sim"), el => el.child(panelButton("herdr-sim", "Simulator", "mods/herdr-sim/icons/smartphone.svg")))
