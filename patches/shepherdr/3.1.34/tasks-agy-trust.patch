@@ -1,0 +1,21 @@
+Subject: Tasks: an agy worker's folder is trusted for its session (--settings trustedWorkspaces), so no trust dialog stops it
+Owner: shepherdr
+Versions: >=3.1.34
+
+diff --git a/mods/tasks/bin/herdr_task/launch.py b/mods/tasks/bin/herdr_task/launch.py
+index c1d84d6..0c97dfc 100644
+--- a/mods/tasks/bin/herdr_task/launch.py
++++ b/mods/tasks/bin/herdr_task/launch.py
+@@ -138,6 +138,12 @@ def own_argv(argv, folder=None):
+         trust = ["-c", "projects={" + ",".join(f'{json.dumps(r)}={{trust_level="trusted"}}' for r in roots) + "}"] if roots else []
+         return out[:1] + ["-c", f"hooks.PermissionRequest=[{{hooks=[{{type=\"command\",command={json.dumps(hook)},timeout={ASK_TIMEOUT}}}]}}]",
+                           "-c", f"hooks.state={{{json.dumps(key)}={{trusted_hash=\"sha256:{digest}\"}}}}", *trust] + out[1:]
++    if k == "agy":
++        # Antigravity CLI asks "Do you trust the contents of this project?" in a folder its settings.json doesn't
++        # list (trustedWorkspaces), before the brief, nobody at the keys. Its --settings is for this session only,
++        # never saved: the folder and its repository's root trusted for this run. Skipped when argv has its own.
++        roots = [] if "--settings" in out else trust_roots(folder)
++        return out[:1] + ["--settings", json.dumps({"trustedWorkspaces": roots})] + out[1:] if roots else out
+     return out
+ 
+ 

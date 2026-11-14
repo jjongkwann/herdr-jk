@@ -1,0 +1,96 @@
+Subject: Tasks: a worker whose agent exits at launch reads as a failed start with its error (Couldn't start: ...), not as waiting for a reply
+Owner: shepherdr
+Versions: >=3.1.34
+
+diff --git a/mods/tasks/bin/herdr_task/agents.py b/mods/tasks/bin/herdr_task/agents.py
+index 3edc78e..910728b 100644
+--- a/mods/tasks/bin/herdr_task/agents.py
++++ b/mods/tasks/bin/herdr_task/agents.py
+@@ -325,6 +325,18 @@ def trust_asked(live):
+     return None
+ 
+ 
++# An agent that exits at launch (a flag its CLI refuses, a CLI that isn't there) leaves why on the
++# screen, above the person's shell prompt (tick.start_failed()).
++EXIT_WORDS = re.compile(r"\b(?:error|unexpected|unknown|invalid|not found|no such|denied|usage|failed|cannot|can't)\b", re.I)
++
++
++def exit_words(screen):
++    """The last line on an agent's screen that reads like an error, at most 120 characters, else None."""
++    lines = [" ".join(x.split()) for x in str(screen or "").split("\n")]
++    found = next((x for x in reversed(lines) if x and EXIT_WORDS.search(x)), None)
++    return fit(found, 120) if found else None
++
++
+ def fit(text, n=LINE_MAX):
+     """One line of at most n characters, cut at a word ("…" at the end) when longer."""
+     text = " ".join(str(text or "").split())
+diff --git a/mods/tasks/bin/herdr_task/launch.py b/mods/tasks/bin/herdr_task/launch.py
+index 0c97dfc..bde6756 100644
+--- a/mods/tasks/bin/herdr_task/launch.py
++++ b/mods/tasks/bin/herdr_task/launch.py
+@@ -725,6 +725,10 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
+         task.setdefault("reviewers", []).append(a)
+         return a
+     task["agents"].append(a)
++    # A start that failed before (tick.start_failed(), or hc refused it) is behind it now.
++    if str(task.get("attention") or "").startswith("Couldn't start"):
++        task.pop("attention", None)
++        task.pop("attention_at", None)
+     # A tab from before tasks had none stays with its old agent, not the task.
+     task["space"] = bare(space)
+     task.pop("tab", None)
+diff --git a/mods/tasks/bin/herdr_task/tick.py b/mods/tasks/bin/herdr_task/tick.py
+index 01ce1a2..088bb2f 100644
+--- a/mods/tasks/bin/herdr_task/tick.py
++++ b/mods/tasks/bin/herdr_task/tick.py
+@@ -11,8 +11,8 @@ import time
+ from .base import Fail, git, guard, hc_json, now, PR_EVERY, run, SHELLS, STORE, stop_note
+ from .settings import machine_name, worker_argv
+ from .agents import (
+-    agent_log, agent_running, busy_again, detail, held_ask, last_question, live_agents, own_work, ready_turns, status_word,
+-    task_status,
++    agent_log, agent_running, busy_again, detail, exit_words, held_ask, last_question, live_agents, own_work, ready_turns,
++    status_word, task_status,
+ )
+ from .provider import NUDGE, provider_cut, provider_error, PROVIDER_WAITS
+ from .sessions import find_lost_logs, refresh_sessions, session_of
+@@ -195,6 +195,29 @@ def settle_back(s, t, report):
+     return True
+ 
+ 
++# A worker's agent that exits at launch: looked for this long after it started.
++START_FAIL_MS = 10 * 60000
++
++
++def start_failed(s, t, report):
++    """A worker whose agent exited at launch (a flag its CLI refuses, a CLI that isn't there): its
++    terminal is back at the person's shell before the agent reported a status or took a turn. It
++    needs the person as a start that failed, with the error it printed (news: failed), as a start
++    hc refused does (tick_store: "Couldn't start: ..."), not as an agent waiting for a reply."""
++    a = (t.get("agents") or [None])[-1]
++    if not a or a.get("ended") or a.get("start_failed") or t.get("attention") or now() - (a.get("at") or 0) > START_FAIL_MS:
++        return
++    k = hc_json("get", a["address"])
++    # Still its launch's terminal (a core restart gives a bare shell: revive's), at the shell, never at work.
++    if not k or k.get("state") != "live" or len(k.get("argv") or []) < 2 or agent_running(k) or k.get("turn") or status_word(k):
++        return
++    why = exit_words(run(["hc", "read", a["address"], "--lines", "40"]).stdout) or "its agent exited before its first turn"
++    a["start_failed"] = now()
++    t["attention"], t["attention_at"] = f"Couldn't start: {why}", now()
++    s.dirty = True
++    report.setdefault("start_failed", []).append(s.ref(t))
++
++
+ def due_pass(s, report):
+     """Scheduled tasks whose time has come (SHEP-38), a time passed while the machine was off too, join
+     the queue in the order they were due: the queue below starts them (after their --after tasks,
+@@ -215,6 +238,8 @@ def tick_store(s, report):
+             back_pass(s, t, report)
+         elif t["state"] == "running" and (t.get("back") or {}).get("auto"):
+             settle_back(s, t, report)
++        if t["state"] == "running":
++            start_failed(s, t, report)
+         if t.get("worktree") and t["state"] in ("running", "ready"):
+             facts(s, t, report)
+             if t["state"] == "ready" and (t.get("pr") or {}).get("news"):
