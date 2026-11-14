@@ -1,0 +1,52 @@
+Subject: lib/COPIES lists omarchy-tabs for its copies of coordinator.js, live.js, spacelog.js, ui.js, dirs.js, core/paths.js and core/spaces.js, so bin/sync-shared --check and shepherdr doctor pass
+Owner: shepherdr
+Versions: >=3.1.34
+
+diff --git a/lib/COPIES b/lib/COPIES
+index 40820f9..f966318 100644
+--- a/lib/COPIES
++++ b/lib/COPIES
+@@ -2,7 +2,7 @@
+ # A mod can only import files in its own folder, so each needs its own copy.
+ # core/<file>: the shared core (core/ beside lib/), copied to mods/<mod>/core/<file>; the service and the web app
+ # load the same file from core/.
+-coordinator.js: coordinator menu-tasks new-menu-tasks newspace shepherdr-settings spaces-chat tabs-tasks tasks
++coordinator.js: coordinator menu-tasks new-menu-tasks newspace shepherdr-settings spaces-chat tabs-tasks tasks omarchy-tabs
+ inbox.js: spaces-chat tabs-tasks tasks workspace-status-chat
+ core/voice.js: chat
+ core/screen.js: chat
+@@ -25,7 +25,7 @@ core/chat-view.js: chat
+ core/screens.js: chat
+ core/send.js: chat
+ core/person.js: chat shepherdr-settings tabs-tasks
+-core/spaces.js: chat spaces-chat shepherdr-settings jump pane-chat tasks newspace coordinator menu-tasks new-menu-tasks tabs-tasks workspace-status-chat
++core/spaces.js: chat spaces-chat shepherdr-settings jump pane-chat tasks newspace coordinator menu-tasks new-menu-tasks tabs-tasks workspace-status-chat omarchy-tabs
+ core/autopilot.js: pane-chat shepherdr-settings
+ core/chat-reader.js: chat
+ core/clean-env.js: chat
+@@ -45,20 +45,20 @@ core/secrets.js: chat shepherdr-settings tabs-tasks
+ taskwhere.js: task-pr task-browser
+ emoji-data.js: chat-react spaces-chat
+ notify.js: chat spaces-chat tabs-tasks tasks shepherdr-settings workspace-status-chat
+-spacelog.js: coordinator menu-tasks new-menu-tasks newspace shepherdr-settings tabs-tasks tasks spaces-chat
++spacelog.js: coordinator menu-tasks new-menu-tasks newspace shepherdr-settings tabs-tasks tasks spaces-chat omarchy-tabs
+ secrets.js: chat shepherdr-settings tabs-tasks
+ service.js: chat shepherdr-settings tabs-tasks
+ bridge.js: tabs-tasks
+ local.js: chat shepherdr-settings tabs-tasks
+ machines.js: spaces-chat shepherdr-settings
+-ui.js: accept-card artifacts chat chat-call chat-image chat-models chat-react coordinator jump toasts menu-tasks new-menu-tasks newspace pane-chat shepherdr-settings spaces-chat tabs-tasks task-browser task-pr tasks tasks-menu workspace-chrome-shepherdr workspace-status-chat confirm-chat prompt-chat machine-add-chat keybinds task-artifacts
++ui.js: accept-card artifacts chat chat-call chat-image chat-models chat-react coordinator jump toasts menu-tasks new-menu-tasks newspace pane-chat shepherdr-settings spaces-chat tabs-tasks task-browser task-pr tasks tasks-menu workspace-chrome-shepherdr workspace-status-chat confirm-chat prompt-chat machine-add-chat keybinds task-artifacts omarchy-tabs
+ artview.js: accept-card artifacts chat chat-image jump task-artifacts
+ artifact-sidebar.js: chat-image jump
+ addons.js: chat pane-chat shepherdr-settings tabs-tasks artifacts jump accept-card toasts spaces-chat workspace-chrome-shepherdr
+-live.js: chat coordinator jump menu-tasks new-menu-tasks newspace pane-chat shepherdr-settings spaces-chat tabs-tasks tasks workspace-status-chat
++live.js: chat coordinator jump menu-tasks new-menu-tasks newspace pane-chat shepherdr-settings spaces-chat tabs-tasks tasks workspace-status-chat omarchy-tabs
+ core/bg-jobs.js: chat
+ core/audio.js: chat
+ usage.js: tabs-tasks chat shepherdr-settings artifacts jump accept-card toasts
+ core/usage.js: tabs-tasks chat shepherdr-settings artifacts jump accept-card toasts
+-dirs.js: accept-card artifacts chat chat-models coordinator jump menu-tasks new-menu-tasks newspace pane-chat shepherdr-settings spaces-chat tabs-tasks task-browser tasks toasts workspace-status-chat
+-core/paths.js: accept-card artifacts chat chat-models coordinator jump menu-tasks new-menu-tasks newspace pane-chat shepherdr-settings spaces-chat tabs-tasks task-browser tasks toasts workspace-status-chat
++dirs.js: accept-card artifacts chat chat-models coordinator jump menu-tasks new-menu-tasks newspace pane-chat shepherdr-settings spaces-chat tabs-tasks task-browser tasks toasts workspace-status-chat omarchy-tabs
++core/paths.js: accept-card artifacts chat chat-models coordinator jump menu-tasks new-menu-tasks newspace pane-chat shepherdr-settings spaces-chat tabs-tasks task-browser tasks toasts workspace-status-chat omarchy-tabs

@@ -20,6 +20,7 @@ const FIXED = {
   "agent.next": ["Agents", "Next agent"], "agent.prev": ["Agents", "Previous agent"],
   "terminal.open": ["Terminal", "New terminal"], "terminal.copy": ["Terminal", "Copy"],
   "terminal.paste": ["Terminal", "Paste"], "terminal.paste_image": ["Terminal", "Paste image"],
+  terminal: ["Terminal", "Left to the program"],
   "omarchy-voice.toggle": ["Terminal", "Start or stop dictation"],
   "pr-flow.refresh": ["Git", "Refresh pull requests"],
   "app.palette": ["Dialogs", "Command palette"], "app.settings": ["Dialogs", "Settings"], "app.help": ["Dialogs", "Help"],
