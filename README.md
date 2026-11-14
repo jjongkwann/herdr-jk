@@ -105,6 +105,8 @@ It needs whisper.cpp (`brew install whisper-cpp`) and a whisper model in `~/.con
 
 These are the keys in [`keys.json`](keys.json). They work only in the Omarchy layout. `super` is ⌘ on macOS. `super-k` lists every key.
 
+`keys.json` also has a `terminal` section with `ctrl-k` → `terminal`, so Ctrl+K stays delete-to-end-of-line in every terminal. `shepherdr update` may add `ctrl-k` (Jump) back to the `global` section, and a `terminal` entry wins over a `global` one.
+
 | Key | Action |
 | --- | --- |
 | `alt-1` … `alt-9` | Go to tab 1 to 9 |
@@ -146,7 +148,7 @@ The repo has the same structure as a Herdr home folder:
 | `mods/` | One folder for each `omarchy-*` mod. Each mod installs on its own. |
 | `themes/` | The Omarchy color themes, plus Dracula |
 | `backgrounds/omarchy/` | The wallpapers of each theme |
-| `keys.json` | The layout keys |
+| `keys.json` | The layout keys, and Ctrl+K left to terminals |
 | `tests/` | Node tests for the mods' logic |
 | `patches/` | Local fixes to installed mods this repo doesn't own, as diffs, with the version each is for ([`patches/README.md`](patches/README.md)) |
 | `scripts/patches.mjs` | Shows which patches an install has (`status`) and applies the missing ones (`apply`) |

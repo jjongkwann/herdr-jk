@@ -1,4 +1,7 @@
 {
+  "terminal": {
+    "ctrl-k": "terminal"
+  },
   "layout:omarchy": {
     "super-ctrl-v": "omarchy-voice.toggle",
     "super-ctrl-c": "omarchy-pane.toggle",
