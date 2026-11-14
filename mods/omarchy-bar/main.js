@@ -75,11 +75,12 @@ export default class OmarchyBar extends View {
         .text_color(t.accent).child(svg("mods/omarchy-bar/omarchy.svg").size(14))))
       .children(list.map((s, i) => {
         const col = blocked.has(s.id) ? t.blocked : s.active ? t.foreground : t.dim;
-        return div().id(`ws-${s.id}`).flex_none().h_full().px(8).flex().items_center().justify_center().cursor_pointer()
+        // The block drags the window; a space number keeps its press so the click selects.
+        return own(div().id(`ws-${s.id}`).flex_none().h_full().px(8).flex().items_center().justify_center().cursor_pointer()
           .border_b(2).border_color(s.active ? t.accent : "#00000000").text_color(col)
           .hover((st) => st.text_color(t.foreground).bg(t.hover))
           .on_click(() => run("space.select", { id: s.id }))
-          .child(String(i + 1));
+          .child(String(i + 1)));
       }))
       .when(Boolean(space), (el) => el.child(sep())
         .child(div().flex_none().text_color(t.foreground).child(space.name))
