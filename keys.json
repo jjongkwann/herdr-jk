@@ -5,7 +5,6 @@
   "layout:omarchy": {
     "super-ctrl-v": "omarchy-voice.toggle",
     "super-ctrl-c": "omarchy-pane.toggle",
-    "super-ctrl-i": "omarchy-pane.devtools",
     "super-shift-r": "pr-flow.refresh",
     "ctrl-shift-p": "mod.open:omarchy-palette",
     "ctrl-,": "mod.open:omarchy-settings",

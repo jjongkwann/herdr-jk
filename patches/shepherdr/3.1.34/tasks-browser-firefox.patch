@@ -1,0 +1,53 @@
+Subject: Tasks: workers get no task browser (agent-browser, Chrome for Testing); their brief points them to Firefox through firefox-agent
+Owner: shepherdr
+Versions: >=3.1.34
+
+diff --git a/mods/tasks/bin/herdr_task/browsers.py b/mods/tasks/bin/herdr_task/browsers.py
+index 7b03706..6e771d0 100644
+--- a/mods/tasks/bin/herdr_task/browsers.py
++++ b/mods/tasks/bin/herdr_task/browsers.py
+@@ -36,13 +36,11 @@ def browser_path():
+ 
+ 
+ def browser_line():
+-    """The worker's brief: its browser's exact command, or "" where there's none."""
+-    bp = browser_path()
+-    if not bp:
+-        return ""
+-    return (f" Your task has its own browser (agent-browser, kept for this task with its sign-ins; the person can watch it "
+-            f"in Herdr): run `{bp} <agent-browser command>`, e.g. `{bp} open http://localhost:3000`, `{bp} snapshot -i`, "
+-            f"`{bp} screenshot`; never pass --session or --profile, and its commands run without asking.")
++    """The worker's brief on pages. The task browser (agent-browser's Chrome for Testing) is off here for now
++    (herdr-jk's patch): workers use Firefox Developer Edition through the firefox-agent MCP tools instead."""
++    return (" There is no task browser for now: for a page, use the firefox-agent MCP tools (Firefox Developer Edition's "
++            "purple \"agent\" tab group): `tab_create` opens a tab in the background, `read_page` and `screenshot` read it, "
++            "and `tab_close` closes the tabs you opened when you're done; never bring Firefox to the front.")
+ 
+ 
+ def idle_ms():
+diff --git a/mods/tasks/bin/herdr_task/launch.py b/mods/tasks/bin/herdr_task/launch.py
+index bde6756..08e8f9f 100644
+--- a/mods/tasks/bin/herdr_task/launch.py
++++ b/mods/tasks/bin/herdr_task/launch.py
+@@ -65,10 +65,7 @@ def own_rules(path):
+     sp = secret_path()
+     for p in [sp, "herdr-secret"] if sp and re.fullmatch(r"[\w@%+=:,./-]+", sp) else []:
+         rules += [f"Bash({p} {verb}:*)" for verb in SECRET]
+-    # The task's browser (HERD-57): every herdr-browser command, as the brief writes it.
+-    bp = browser_path()
+-    for p in [bp, "herdr-browser"] if bp and re.fullmatch(r"[\w@%+=:,./-]+", bp) else []:
+-        rules += [f"Bash({p}:*)"]
++    # The task's browser (HERD-57) is off here for now (herdr-jk's patch): no herdr-browser rules.
+     return rules
+ 
+ 
+@@ -174,9 +171,6 @@ def own_command(path, text, sandboxed=False):
+         at = m.end()
+     if len(words) >= 2 and words[0] == path and words[1] in OWN:
+         return True
+-    bp = browser_path()
+-    if bp and len(words) >= 2 and words[0] in (bp, "herdr-browser"):
+-        return True
+     ap = artifact_path()
+     if sandboxed and len(words) >= 2 and words[0] in (ap, "herdr-artifact") and words[1] in ARTIFACT and "--custom" not in words:
+         return True

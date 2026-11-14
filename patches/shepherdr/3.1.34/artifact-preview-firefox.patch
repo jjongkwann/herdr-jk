@@ -1,0 +1,30 @@
+Subject: Artifacts: herdr-artifact preview says to open the link in Firefox through firefox-agent, not the task browser
+Owner: shepherdr
+Versions: >=3.1.34
+
+diff --git a/mods/artifacts/bin/herdr-artifact b/mods/artifacts/bin/herdr-artifact
+index 218e2df..d0b9e8f 100755
+--- a/mods/artifacts/bin/herdr-artifact
++++ b/mods/artifacts/bin/herdr-artifact
+@@ -1990,9 +1990,9 @@ def cmd_preview(o):
+         print(json.dumps({"id": o.id, "link": link}))
+     else:
+         print(link)
+-        print("Open it in your task's browser, as the person sees it on a phone and on a desktop:\n"
+-              f"  herdr-browser set viewport 390 844 && herdr-browser open '{link}' && herdr-browser screenshot /abs/phone.png\n"
+-              f"  herdr-browser set viewport 1280 800 && herdr-browser open '{link}' && herdr-browser screenshot /abs/desktop.png")
++        print("Open it in Firefox with the firefox-agent MCP tools (there is no task browser for now), as the person sees it:\n"
++              f"  tab_create with url '{link}', screenshot it at a desktop's width, then tab_close it.\n"
++              "  firefox-agent can't set a phone's width yet, and this viewer can't be framed: say the phone view wasn't checked.")
+     return 0
+ 
+ 
+@@ -2183,7 +2183,7 @@ def main():
+     c = cmd("link", cmd_link, "an artifact's link in the web app, for the person")
+     c.add_argument("id")
+     c.add_argument("--from", dest="machine", help="the machine it's on (default: this one)")
+-    c = cmd("preview", cmd_preview, "see an artifact here as the person sees it: the web app's viewer on 127.0.0.1, for your task's browser")
++    c = cmd("preview", cmd_preview, "see an artifact here as the person sees it: the web app's viewer on 127.0.0.1, to open in Firefox (firefox-agent)")
+     c.add_argument("id")
+     c.add_argument("--version", type=int, help="an older version (default: the latest)")
+     c = cmd("note", cmd_note, "send the person's note on an artifact to the agent that keeps it (the viewer's Mark up)")
