@@ -2,6 +2,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { syncNames } from "./names.js";
+import { requestClose } from "./close.js";
 import { renderPaneHeader } from "./pane.js";
 import { spaces, panes, terminals, props, run, openOverlay, theme, shared, setShared, layout, exec, hc, readTextFile, writeTextFile, home, appHome, nextCommand, notify, focused, settings } from "herdr";
 import { chatAgents, spacesWithChats } from "./parked.js";
@@ -324,7 +325,7 @@ export default class Tabs extends View {
           .child(div().flex_1().min_w(0).truncate().child(c.zoomed ? `${name} Z` : name))
           .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
           .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(8).flex_none().rounded(4).bg(t[c.status])))
-          .when(c.active || this.overTab === c.id, el => el.child(div().id(`close-${c.id}`).flex_none().p(2).rounded(4).text_color(t.muted).hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(14)))));
+          .when(c.active || this.overTab === c.id, el => el.child(div().id(`close-${c.id}`).flex_none().p(2).rounded(4).text_color(t.muted).hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); requestClose("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(14)))));
     };
     const root = layout();
     const panel = find(root, "panel"), body = find(root, "panel-body");

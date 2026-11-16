@@ -2,6 +2,7 @@
 // A viewed done agent stays in Done until left.
 
 import { View, div, image, svg } from "gpui-kit";
+import { requestClose } from "./close.js";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, home } from "herdr";
 import { chatAgents, withParked } from "./parked.js";
@@ -247,7 +248,7 @@ export default class Agents extends View {
         } else {
           this.arming = null;
           this.hovered = null;
-          run("terminal.kill", { terminal: address });
+          requestClose("terminal.kill", { terminal: address });
         }
         cx.notify();
       })

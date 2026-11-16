@@ -19,6 +19,7 @@
   "preview": "layouts/omarchy.svg",
   "resizable": false,
   "children": [
+    {"id":"omarchy-close-controller","type":"block","size":{"px":0},"content":{"mod":"omarchy-close"}},
     {
       "id": "topbar",
       "type": "row",

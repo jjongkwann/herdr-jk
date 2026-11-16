@@ -34,6 +34,7 @@ import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { panes, terminals, spaces, machines, props, run, theme, home, exec, hc, notify, nextCommand, readTextFile, appHome, layout, shared, setShared, window, openOverlay, watchFolder, settings } from "herdr";
 import { act, readLive, watchLive, touches } from "./browser/client.js";
 import { assistantStep, slotOf } from "./assistant.js";
+import { requestClose } from "./close.js";
 import { isViewer, kindOf, devtoolsArgv, devtoolsKeyPane, onScreen, errorLabel, pageShown, errorsPopup, saveFolder, reloads, Burst } from "./viewer.js";
 
 const CHAT = "chat";
@@ -572,7 +573,7 @@ export default class Pane extends View {
     this.ending = false;
     const terminal = agentOf(chat);
     if (terminal) run("terminal.kill", { terminal });
-    run("pane.close", { pane: chat });
+    requestClose("pane.close", { pane: chat });
   }
 
   // A 20 px text button for the header's "End …?" question.
@@ -644,7 +645,9 @@ export default class Pane extends View {
       .hover((s) => s.bg(t.foreground + "14").border_color(t.foreground + "40").text_color(t.foreground))
       .on_click((_e, cx) => {
         cx.stop_propagation();
-        if (fn) fn(); else run(command, args);
+        if (fn) fn();
+        else if (command === "pane.close") requestClose(command, args);
+        else run(command, args);
         cx.notify();
       })
       .child(svg(`mods/omarchy-pane/${icon}.svg`).size(14));

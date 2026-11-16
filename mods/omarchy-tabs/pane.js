@@ -4,6 +4,7 @@ import { div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { panes, props, run, theme, home } from "herdr";
 import { paneTitle } from "./names.js";
+import { requestClose } from "./close.js";
 
 function icon(p, size, color) {
   if (!p?.icon) return null;
@@ -19,7 +20,7 @@ function folder(cwd) {
 function button(t, id, asset, command, args) {
   return div().id(id).p(3).rounded(4).text_color(t.dim)
     .hover(s => s.bg(t.hover).text_color(t.foreground))
-    .on_click((_event, cx) => { cx.stop_propagation(); run(command, args); })
+    .on_click((_event, cx) => { cx.stop_propagation(); if (command === "pane.close") requestClose(command, args); else run(command, args); })
     .child(svg(`mods/pane/${asset}.svg`).size(14));
 }
 
