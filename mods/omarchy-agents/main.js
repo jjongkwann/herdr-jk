@@ -1,6 +1,7 @@
 // Agents in grouped or priority views; parents take their most urgent sub-agent's place.
 // A viewed done agent stays in Done until left.
 
+import { ScrollRail } from "./scroll-rail.js";
 import { View, div, image, svg } from "gpui-kit";
 import { requestClose } from "./close.js";
 import { v_flex, h_flex } from "gpui-base";
@@ -81,6 +82,7 @@ function icon(p, size, color) {
 
 export default class Agents extends View {
   init(_props, cx) {
+    this.rail = new ScrollRail();
     if (props()?.sortMenu) return;
     this.folded = new Set();
     // Each agent's last state and when it changed (ms), kept across restarts.
@@ -546,7 +548,9 @@ export default class Agents extends View {
       .when(list.length === 0 && !collapsed, (el) =>
         el.child(div().px(12).text_size(12).text_color(t.dim).child("No agent status yet. Agents show up here when they report their status. Older versions and agents inside tmux may not.")),
       )
-      .child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 10).when(collapsed, (el) => el.pt(10).gap(6).items_center()).pb(10).overflow_y_scrollbar().mode("always").children(rows))
+      .child(collapsed
+        ? this.rail.render("agents-rail", rows, t.chrome, 10)
+        : v_flex().id("ag-list").flex_1().min_h(0).px(10).pb(10).overflow_y_scrollbar().mode("always").children(rows))
       .when(collapsed, (el) =>
         el.child(
           h_flex()
