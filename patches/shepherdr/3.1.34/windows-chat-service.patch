@@ -1,0 +1,40 @@
+Subject: The web app finds a Windows Assistant's log too (core/chat-log.js FIND, as windows-chat)
+Owner: shepherdr
+Versions: >=3.1.34
+Root: ~/.local/share/shepherdr
+
+diff --git a/core/chat-log.js b/core/chat-log.js
+index 9fcf441..e01359f 100644
+--- a/core/chat-log.js
++++ b/core/chat-log.js
+@@ -12,6 +12,30 @@ import { codexQuestions } from "./asks.js";
+ export const FIND = `
+ kind="$1"; pid="$2"
+ kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
++# Windows (Git's sh, no pgrep): every process under it, from a process snapshot. The agent is a child of the
++# Git bash that ran its command there (Windows has no exec), so the terminal's own program is that bash.
++[ -n "\${WINDIR:-}" ] && kids() { python3 -c '
++import ctypes as c, ctypes.wintypes as w, sys
++class E(c.Structure): _fields_ = [("n", w.DWORD), ("u", w.DWORD), ("p", w.DWORD), ("h", c.c_size_t), ("m", w.DWORD), ("t", w.DWORD), ("pp", w.DWORD), ("b", c.c_long), ("f", w.DWORD), ("x", c.c_char * 260)]
++k = c.windll.kernel32
++k.CreateToolhelp32Snapshot.restype = c.c_void_p
++k.Process32First.argtypes = k.Process32Next.argtypes = [c.c_void_p, c.POINTER(E)]
++k.CloseHandle.argtypes = [c.c_void_p]
++s, e, m = k.CreateToolhelp32Snapshot(2, 0), E(), {}
++e.n = c.sizeof(E)
++ok = k.Process32First(s, c.byref(e))
++while ok:
++    m.setdefault(e.pp, []).append(e.p)
++    ok = k.Process32Next(s, c.byref(e))
++k.CloseHandle(s)
++seen = set()
++def d(p):
++    for q in m.get(p, []):
++        if q not in seen:
++            seen.add(q)
++            print(q)
++            d(q)
++d(int(sys.argv[1]))' "$1" 2>/dev/null | tr -d '\\r'; }
+ for p in "$pid" $(kids "$pid"); do
+   if [ "$kind" = claude ]; then
+     j="$HOME/.claude/sessions/$p.json"
