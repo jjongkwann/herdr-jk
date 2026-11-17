@@ -1,0 +1,93 @@
+Subject: Chat on a Windows machine: the Assistant starts there (its one-off template in pieces) and its log is found under Git bash
+Owner: shepherdr
+Versions: >=3.1.34
+
+diff --git a/core/chat-log.js b/core/chat-log.js
+index 9fcf441..e01359f 100644
+--- a/core/chat-log.js
++++ b/core/chat-log.js
+@@ -12,6 +12,30 @@ import { codexQuestions } from "./asks.js";
+ export const FIND = `
+ kind="$1"; pid="$2"
+ kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
++# Windows (Git's sh, no pgrep): every process under it, from a process snapshot. The agent is a child of the
++# Git bash that ran its command there (Windows has no exec), so the terminal's own program is that bash.
++[ -n "\${WINDIR:-}" ] && kids() { python3 -c '
++import ctypes as c, ctypes.wintypes as w, sys
++class E(c.Structure): _fields_ = [("n", w.DWORD), ("u", w.DWORD), ("p", w.DWORD), ("h", c.c_size_t), ("m", w.DWORD), ("t", w.DWORD), ("pp", w.DWORD), ("b", c.c_long), ("f", w.DWORD), ("x", c.c_char * 260)]
++k = c.windll.kernel32
++k.CreateToolhelp32Snapshot.restype = c.c_void_p
++k.Process32First.argtypes = k.Process32Next.argtypes = [c.c_void_p, c.POINTER(E)]
++k.CloseHandle.argtypes = [c.c_void_p]
++s, e, m = k.CreateToolhelp32Snapshot(2, 0), E(), {}
++e.n = c.sizeof(E)
++ok = k.Process32First(s, c.byref(e))
++while ok:
++    m.setdefault(e.pp, []).append(e.p)
++    ok = k.Process32Next(s, c.byref(e))
++k.CloseHandle(s)
++seen = set()
++def d(p):
++    for q in m.get(p, []):
++        if q not in seen:
++            seen.add(q)
++            print(q)
++            d(q)
++d(int(sys.argv[1]))' "$1" 2>/dev/null | tr -d '\\r'; }
+ for p in "$pid" $(kids "$pid"); do
+   if [ "$kind" = claude ]; then
+     j="$HOME/.claude/sessions/$p.json"
+diff --git a/mods/chat/core/chat-log.js b/mods/chat/core/chat-log.js
+index 9fcf441..e01359f 100644
+--- a/mods/chat/core/chat-log.js
++++ b/mods/chat/core/chat-log.js
+@@ -12,6 +12,30 @@ import { codexQuestions } from "./asks.js";
+ export const FIND = `
+ kind="$1"; pid="$2"
+ kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
++# Windows (Git's sh, no pgrep): every process under it, from a process snapshot. The agent is a child of the
++# Git bash that ran its command there (Windows has no exec), so the terminal's own program is that bash.
++[ -n "\${WINDIR:-}" ] && kids() { python3 -c '
++import ctypes as c, ctypes.wintypes as w, sys
++class E(c.Structure): _fields_ = [("n", w.DWORD), ("u", w.DWORD), ("p", w.DWORD), ("h", c.c_size_t), ("m", w.DWORD), ("t", w.DWORD), ("pp", w.DWORD), ("b", c.c_long), ("f", w.DWORD), ("x", c.c_char * 260)]
++k = c.windll.kernel32
++k.CreateToolhelp32Snapshot.restype = c.c_void_p
++k.Process32First.argtypes = k.Process32Next.argtypes = [c.c_void_p, c.POINTER(E)]
++k.CloseHandle.argtypes = [c.c_void_p]
++s, e, m = k.CreateToolhelp32Snapshot(2, 0), E(), {}
++e.n = c.sizeof(E)
++ok = k.Process32First(s, c.byref(e))
++while ok:
++    m.setdefault(e.pp, []).append(e.p)
++    ok = k.Process32Next(s, c.byref(e))
++k.CloseHandle(s)
++seen = set()
++def d(p):
++    for q in m.get(p, []):
++        if q not in seen:
++            seen.add(q)
++            print(q)
++            d(q)
++d(int(sys.argv[1]))' "$1" 2>/dev/null | tr -d '\\r'; }
+ for p in "$pid" $(kids "$pid"); do
+   if [ "$kind" = claude ]; then
+     j="$HOME/.claude/sessions/$p.json"
+diff --git a/mods/chat/main.js b/mods/chat/main.js
+index 0913d25..94b2909 100644
+--- a/mods/chat/main.js
++++ b/mods/chat/main.js
+@@ -1742,7 +1742,13 @@ export default class Chat extends View {
+           words = body.trim();
+           oneOff = `herdr-${template}-${Date.now().toString(36)}`;
+           const file = `---\nname: ${oneOff}\ndescription: A one-off ${template} start with chosen settings (mods/chat), removed after use.\ncommand: ${cleanCommand(cmd)}\n---\n${body}`;
+-          await exec("sh", ["-c", TEMPLATE + 'printf "%s" "$2" > "$dir/$1.md"', "x", oneOff, file], on);
++          // On another machine, in pieces: a command line there can be shorter than the file (Windows: 32,767
++          // characters, and the assistant's words are longer). Each piece goes after a space, dropped there: an
++          // argument with a space is always quoted, so Git's sh on Windows never expands what's in it.
++          const parts = machine ? file.match(/[\s\S]{1,8000}/gu).map((p) => ` ${p}`) : [file];
++          for (const [i, part] of parts.entries()) {
++            await exec("sh", ["-c", TEMPLATE + `printf "%s" "${machine ? "$" + "{2# }" : "$2"}" ${i ? ">>" : ">"} "$dir/$1.md"`, "x", oneOff, part], on);
++          }
+           launch = oneOff;
+         }
+       }

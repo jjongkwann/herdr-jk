@@ -24,7 +24,7 @@ herdr-app check mods/<name>       # each mod you changed
 
 - Herdr runs the copy in `~/.config/herdr-app`, which is separate from this repo. Edits here change nothing in the app until the changed files are copied there.
 - Herdr rewrites the installed `layouts/omarchy.json` as the person works (sizes, open panels, the wallpaper). Never copy it back into the repo.
-- The person installs this only on this Mac. Their Windows PC runs plain Herdr, and nothing is copied to other machines.
+- The person installs this only on this Mac. Their Windows PC runs plain Herdr, and nothing from this repo is copied to other machines. Shepherdr's machines sync does put herdr-task and the role templates on win-pc, and the `windows-*` patches make them run there ([`patches/README.md`](patches/README.md#tasks-on-a-windows-machine)).
 - In a Herdr task, don't copy files into `~/.config/herdr-app`, switch layouts or drive the Herdr window: the Assistant installs the change after the person accepts it.
 - Saving a mod file in `~/.config/herdr-app` reloads every copy of that mod. Make all of a file's changes in one save.
 - A fix to an installed mod this repo doesn't own (Shepherdr's mods, pr-flow, ...) is kept in `patches/` as a diff against the install root, with the owner's version it is for. An update overwrites the installed files: run `node scripts/patches.mjs status`, then apply the missing patches as [`patches/README.md`](patches/README.md) says. The 3.1.5 patches (mic with ffmpeg, the whisper model path, the macOS clipboard, ...) were dropped after the update to 3.1.34, which covers or replaces them.

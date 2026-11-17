@@ -1,0 +1,748 @@
+Subject: herdr-artifact and herdr-secret on a Windows machine
+Owner: shepherdr
+Versions: >=3.1.34
+
+diff --git a/bin/herdr-secret b/bin/herdr-secret
+index 83d6cdc..5a5ea89 100755
+--- a/bin/herdr-secret
++++ b/bin/herdr-secret
+@@ -25,9 +25,9 @@ The ask is a label on the agent's own terminal, herdr.secret.ask.<NAME>=<why>: e
+ sees it in terminals(), for a terminal on another machine too. The card removes it once answered.
+ 
+ On another machine nothing is stored: `run`, `env` and `list` there put a request label on the
+-terminal (herdr.secret.want=<nonce>:<names>) and wait on a fresh FIFO. The main machine's Herdr
+-sees the label and runs `herdr-secret serve <machine>/<terminal>` here, which checks that
+-terminal's scope and writes the values into the FIFO over hc's own link (hc exec --stdin). The
++terminal (herdr.secret.want=<nonce>:<names>) and wait on a fresh FIFO (on Windows, a named pipe).
++The main machine's Herdr sees the label and runs `herdr-secret serve <machine>/<terminal>` here, which
++checks that terminal's scope and writes the values into the FIFO over hc's own link (hc exec --stdin). The
+ copy there is installed with `herdr-secret install --on <machine>`, which also marks it remote.
+ 
+ The person (on any machine: another one passes it to the main machine over hc's link):
+@@ -46,7 +46,6 @@ No such record yet: the main machine is the one without ~/.local/share/shepherdr
+ """
+ 
+ import argparse
+-import fcntl
+ import getpass
+ import json
+ import os
+@@ -60,6 +59,51 @@ import sys
+ import threading
+ import time
+ 
++# Windows (a machine linked over herdr-core runs this with its own Python): files and pipes in UTF-8, as on every
++# other machine (its code page, cp949 or cp1252, would garble herdr-core's answers). Python's UTF-8 mode only takes
++# effect at start, so it runs again in it (as herdr-task's entry does).
++if os.name == "nt" and not sys.flags.utf8_mode:
++    # Ctrl+C reaches both: the second one answers it, this one only waits and passes its exit code on.
++    signal.signal(signal.SIGINT, lambda _s, _f: None)
++    sys.exit(subprocess.call([sys.executable, "-X", "utf8", *sys.argv]))
++
++try:
++    import fcntl
++except ImportError:
++    # Windows has no fcntl: flock takes LockFileEx's shared and exclusive locks, waiting or not as asked (the same
++    # shim as herdr_task/compat.py; this file runs alone, so it carries its own).
++    import ctypes
++    import ctypes.wintypes as _w
++    import msvcrt
++    import types
++
++    class _Overlapped(ctypes.Structure):
++        _fields_ = [("Internal", ctypes.c_void_p), ("InternalHigh", ctypes.c_void_p), ("Offset", _w.DWORD),
++                    ("OffsetHigh", _w.DWORD), ("hEvent", _w.HANDLE)]
++
++    _k = ctypes.WinDLL("kernel32", use_last_error=True)
++    _k.LockFileEx.argtypes = [_w.HANDLE, _w.DWORD, _w.DWORD, _w.DWORD, _w.DWORD, ctypes.POINTER(_Overlapped)]
++    _k.LockFileEx.restype = _w.BOOL
++    _k.UnlockFileEx.argtypes = [_w.HANDLE, _w.DWORD, _w.DWORD, _w.DWORD, ctypes.POINTER(_Overlapped)]
++    _k.UnlockFileEx.restype = _w.BOOL
++
++    def _flock(f, op):
++        h = msvcrt.get_osfhandle(f if isinstance(f, int) else f.fileno())
++        # One byte far past any data: Windows locks are mandatory, so a lock there never stops a read of the file.
++        ov = _Overlapped(OffsetHigh=0x7FFFFFFF)
++        if op & 8:  # LOCK_UN
++            _k.UnlockFileEx(h, 0, 1, 0, ctypes.byref(ov))
++            return
++        flags = (2 if op & 2 else 0) | (1 if op & 4 else 0)  # LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY
++        if not _k.LockFileEx(h, flags, 0, 1, 0, ctypes.byref(ov)):
++            err = ctypes.get_last_error()
++            if err == 33:  # ERROR_LOCK_VIOLATION: held by another
++                raise BlockingIOError(11, "Resource temporarily unavailable")
++            raise ctypes.WinError(err)
++
++    fcntl = types.SimpleNamespace(LOCK_SH=1, LOCK_EX=2, LOCK_NB=4, LOCK_UN=8, flock=_flock)
++
++WINDOWS = os.name == "nt"
+ HOME = os.path.expanduser("~")
+ # ---- SHEP: Shepherdr's own folders (a copy of herdr_task/layout.py's PY; test/test_layout.py checks it) ----
+ def SHEP(rel, _t={'.herdr/shepherdr.json': ('config', 'settings.json'), '.herdr/model-picks.json': ('config', 'model-picks.json'), '.herdr/tasks': ('data', 'tasks'), '.herdr/artifacts': ('data', 'artifacts'), '.herdr/vault.json': ('data', 'secrets/vault.json'), '.herdr/secret-remote': ('data', 'secrets/remote'), '.herdr/tools.json': ('data', 'tools.json'), '.herdr/shepherdr': ('state', 'service'), '.herdr/browser': ('state', 'browser'), '.herdr/secret-drop': ('state', 'secret-drop'), '.herdr/secret-served': ('state', 'secret-served'), '.herdr/cli-check.json': ('state', 'cli-check.json'), '.herdr/machine-hold.json': ('state', 'machine-hold.json')}):
+@@ -90,8 +134,10 @@ VAULT = os.environ.get("HERDR_SECRET_VAULT") or SHEP(".herdr/vault.json")
+ # while no machine is named as the main one (SECRETS_DOC).
+ REMOTE_MARK = SHEP(".herdr/secret-remote")
+ # herdr-core's state here: core.json (this machine's id and name) and docs.json (its documents).
++# On Windows herdr-core keeps it in %LOCALAPPDATA%\\herdr-core.
+ CORE = os.environ.get("HERDR_SECRET_CORE") or os.path.join(
+-    os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state"), "herdr-core", os.environ.get("HC_SESSION") or "default")
++    (os.environ.get("LOCALAPPDATA") or os.path.join(HOME, "AppData", "Local")) if WINDOWS else
++    (os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state")), "herdr-core", os.environ.get("HC_SESSION") or "default")
+ SECRETS_DOC = "shepherdr.secrets"
+ # herdr-secret on another machine, wherever it was installed there (PATH there may not have it).
+ THERE = ('for b in "$HOME/.local/bin/herdr-secret" "${HERDR_APP_HOME:-$HOME/.config/herdr-app}/bin/herdr-secret" '
+@@ -212,6 +258,66 @@ def hc_json(*args):
+         return None
+ 
+ 
++def parents_nt():
++    """Windows: every process's parent as Windows names it, {pid: parent pid} (one snapshot; there is no /proc there)."""
++    import ctypes
++    import ctypes.wintypes as w
++
++    class Entry(ctypes.Structure):
++        _fields_ = [("dwSize", w.DWORD), ("cntUsage", w.DWORD), ("th32ProcessID", w.DWORD), ("th32DefaultHeapID", ctypes.c_void_p),
++                    ("th32ModuleID", w.DWORD), ("cntThreads", w.DWORD), ("th32ParentProcessID", w.DWORD),
++                    ("pcPriClassBase", w.LONG), ("dwFlags", w.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
++
++    k = ctypes.WinDLL("kernel32", use_last_error=True)
++    k.CreateToolhelp32Snapshot.restype = w.HANDLE
++    k.CreateToolhelp32Snapshot.argtypes = [w.DWORD, w.DWORD]
++    k.Process32FirstW.argtypes = k.Process32NextW.argtypes = [w.HANDLE, ctypes.POINTER(Entry)]
++    k.CloseHandle.argtypes = [w.HANDLE]
++    snap = k.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS
++    if snap in (None, w.HANDLE(-1).value):
++        return {}
++    out, e = {}, Entry(dwSize=ctypes.sizeof(Entry))
++    try:
++        more = k.Process32FirstW(snap, ctypes.byref(e))
++        while more:
++            out[e.th32ProcessID] = e.th32ParentProcessID
++            more = k.Process32NextW(snap, ctypes.byref(e))
++    finally:
++        k.CloseHandle(snap)
++    return out
++
++
++def started_nt(pid):
++    """Windows: when a process started (its creation time), or None when it can't be asked."""
++    import ctypes
++    import ctypes.wintypes as w
++    k = ctypes.WinDLL("kernel32", use_last_error=True)
++    k.OpenProcess.restype = w.HANDLE
++    k.OpenProcess.argtypes = [w.DWORD, w.BOOL, w.DWORD]
++    k.GetProcessTimes.argtypes = [w.HANDLE] + [ctypes.POINTER(w.FILETIME)] * 4
++    k.CloseHandle.argtypes = [w.HANDLE]
++    h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
++    if not h:
++        return None
++    t = [w.FILETIME() for _ in range(4)]
++    try:
++        if not k.GetProcessTimes(h, *(ctypes.byref(x) for x in t)):
++            return None
++    finally:
++        k.CloseHandle(h)
++    return (t[0].dwHighDateTime << 32) | t[0].dwLowDateTime
++
++
++def git_ps():
++    """Windows: Git's own ps.exe, beside its sh (usr\\bin), from a folder on PATH; None without one. Never by its
++    bare name: Windows would start a ps.exe, ps.cmd or ps.bat of the current folder (a repo's) first."""
++    for d in os.environ.get("PATH", "").split(os.pathsep):
++        for b in (d, os.path.join(d, "..", "usr", "bin")):
++            if os.path.isabs(b) and all(os.path.isfile(os.path.join(b, n)) for n in ("ps.exe", "sh.exe", "msys-2.0.dll")):
++                return os.path.normpath(os.path.join(b, "ps.exe"))
++    return None
++
++
+ def parent_pid(pid):
+     try:
+         with open(f"/proc/{pid}/stat") as f:
+@@ -226,8 +332,47 @@ def parent_pid(pid):
+         return 0
+ 
+ 
++def msys_parents():
++    """Windows, under Git's sh: {process: its parent} as Git's own ps knows them, in Windows' process ids. A program
++    sh starts by its "#!" line (as this one is) names a parent to Windows that has already gone: sh's exec passes
++    through a short-lived process. That one link only Git's sh keeps. {} when its ps isn't on PATH."""
++    ps = git_ps()
++    if not ps:
++        return {}
++    try:
++        r = subprocess.run([ps], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=10)
++    except (OSError, subprocess.TimeoutExpired):
++        return {}
++    lines = r.stdout.splitlines()
++    if not lines or "WINPID" not in lines[0]:  # PID PPID PGID WINPID ...: only Git's (MSYS) ps
++        return {}
++    rows = {}
++    for line in lines[1:]:
++        f = line.split()
++        if f and not f[0].isdigit():  # a state letter before the pid
++            f = f[1:]
++        if len(f) >= 4 and all(x.isdigit() for x in f[:4]):
++            rows[int(f[0])] = (int(f[1]), int(f[3]))  # its pid there: (its parent's pid there, its Windows pid)
++    return {win: rows[par][1] for par, win in rows.values() if par in rows}
++
++
+ def ancestors():
+     out, pid = set(), os.getpid()
++    if WINDOWS:
++        win, msys, todo = parents_nt(), msys_parents(), [pid]
++        while todo and len(out) < 64:
++            pid = todo.pop()
++            born = started_nt(pid)
++            # its parent as Windows names it (while that one still runs), and as Git's sh does
++            for par in (win.get(pid) if win.get(pid) in win else None, msys.get(pid)):
++                if not par or par <= 4 or par in out:  # 0 and 4 are Windows' own
++                    continue
++                # a parent started before its child: a process id used again by a later process isn't one
++                then = started_nt(par)
++                if born is not None and then is not None and then <= born:
++                    out.add(par)
++                    todo.append(par)
++        return out
+     for _ in range(64):
+         pid = parent_pid(pid)
+         if pid <= 1 or pid in out:
+@@ -250,7 +395,10 @@ def me():
+     return {"address": tid, "labels": t.get("labels") or {}, "parent": t.get("parent")}
+ 
+ 
+-DOCS = 'cat "${XDG_STATE_HOME:-$HOME/.local/state}/herdr-core/default/docs.json"'
++# Read through sh on any machine (no words of the person's in it, so Git's sh on Windows is safe): where Windows
++# keeps them when the usual place has none.
++DOCS = ('f="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-core/default/docs.json"; '
++        '[ -f "$f" ] || [ -z "$LOCALAPPDATA" ] || f="$LOCALAPPDATA/herdr-core/default/docs.json"; cat "$f"')
+ 
+ 
+ def space_of_pane(pane, machine):
+@@ -489,8 +637,121 @@ def values(names, list_only=False):
+     return fetch(t["address"], "list" if list_only else ",".join(names))
+ 
+ 
++# Windows has no FIFOs: the box there is a named pipe of this name plus the request's nonce.
++PIPE = "\\\\.\\pipe\\herdr-secret-"
++# Run by the main machine on a Windows one (python3 -c, the answer on stdin, the nonce its argument): writes the
++# answer into the waiting pipe. Git's sh there can't open a named pipe, so serve() doesn't go through sh for it.
++# A pipe's name is public there and a closed one can be made again by anyone, so it writes only into a pipe that the
++# account it runs as owns, and opens it so that the pipe's side may identify it, never act as it.
++PIPE_WRITE = """import ctypes, os, sys
++if os.name != "nt":
++    sys.exit(3)
++import ctypes.wintypes as w
++k, a = ctypes.WinDLL("kernel32", use_last_error=True), ctypes.WinDLL("advapi32", use_last_error=True)
++k.CreateFileW.restype = k.GetCurrentProcess.restype = w.HANDLE
++k.CreateFileW.argtypes = [w.LPCWSTR, w.DWORD, w.DWORD, ctypes.c_void_p, w.DWORD, w.DWORD, w.HANDLE]
++k.WriteFile.argtypes = [w.HANDLE, ctypes.c_char_p, w.DWORD, ctypes.POINTER(w.DWORD), ctypes.c_void_p]
++k.CloseHandle.argtypes = [w.HANDLE]
++a.OpenProcessToken.argtypes = [w.HANDLE, w.DWORD, ctypes.POINTER(w.HANDLE)]
++a.GetTokenInformation.argtypes = [w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD, ctypes.POINTER(w.DWORD)]
++a.GetSecurityInfo.argtypes = [w.HANDLE, ctypes.c_int, w.DWORD] + [ctypes.c_void_p] * 5
++a.GetSecurityInfo.restype = w.DWORD
++a.EqualSid.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
++# to write, and to read its owner (GENERIC_WRITE | READ_CONTROL); SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION
++h = k.CreateFileW(%r + sys.argv[1], 0x40000000 | 0x00020000, 0, None, 3, 0x00100000 | 0x00010000, None)
++if h in (None, w.HANDLE(-1).value):
++    sys.exit(3)
++tok, n, owner, sd = w.HANDLE(), w.DWORD(), ctypes.c_void_p(), ctypes.c_void_p()
++if not a.OpenProcessToken(k.GetCurrentProcess(), 8, ctypes.byref(tok)):
++    sys.exit(3)
++a.GetTokenInformation(tok, 1, None, 0, ctypes.byref(n))
++me = ctypes.create_string_buffer(n.value)  # TOKEN_USER: this account's SID first
++if not a.GetTokenInformation(tok, 1, me, n, ctypes.byref(n)) or a.GetSecurityInfo(h, 6, 1, ctypes.byref(owner), None, None, None, ctypes.byref(sd)):
++    sys.exit(3)
++if not a.EqualSid(owner, ctypes.cast(me, ctypes.POINTER(ctypes.c_void_p))[0]):
++    sys.exit(3)
++data, put = sys.stdin.buffer.read(), w.DWORD()
++if not k.WriteFile(h, data, len(data), ctypes.byref(put), None) or put.value != len(data):
++    sys.exit(3)
++k.CloseHandle(h)
++""" % PIPE
++
++
++def fetch_nt(tid, what):
++    """fetch() on Windows: the main machine's answer comes into a fresh named pipe instead of a FIFO. Only the account
++    that made it may open it (no Everyone, no Anonymous: a pipe's name, unlike a FIFO in an owner-only folder, is
++    listed for every program), in only, one client at a time, none from another machine (PIPE_REJECT_REMOTE_CLIENTS,
++    0x8); nothing is written to disk. A client that leaves without a full line isn't the answer: it listens again
++    until the time is up."""
++    import _winapi
++    import ctypes
++    import ctypes.wintypes as w
++
++    class Rights(ctypes.Structure):  # SECURITY_ATTRIBUTES
++        _fields_ = [("nLength", w.DWORD), ("lpSecurityDescriptor", ctypes.c_void_p), ("bInheritHandle", w.BOOL)]
++
++    k, adv = ctypes.WinDLL("kernel32", use_last_error=True), ctypes.WinDLL("advapi32", use_last_error=True)
++    k.DisconnectNamedPipe.argtypes = [w.HANDLE]
++    k.LocalFree.argtypes = [ctypes.c_void_p]
++    adv.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [w.LPCWSTR, w.DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p]
++    sd = ctypes.c_void_p()
++    # everything to its owner (OW), nothing to anyone else, nothing inherited (P)
++    if not adv.ConvertStringSecurityDescriptorToSecurityDescriptorW("D:P(A;;FA;;;OW)", 1, ctypes.byref(sd), None):
++        raise ctypes.WinError(ctypes.get_last_error())
++    rights = Rights(ctypes.sizeof(Rights), sd, False)
++    nonce = tokens.token_hex(16)
++    try:
++        h = _winapi.CreateNamedPipe(PIPE + nonce, _winapi.PIPE_ACCESS_INBOUND | _winapi.FILE_FLAG_FIRST_PIPE_INSTANCE | _winapi.FILE_FLAG_OVERLAPPED,
++                                    _winapi.PIPE_WAIT | 0x8, 1, 0, 65536, 0, ctypes.addressof(rights))
++    finally:
++        k.LocalFree(sd)
++    buf, end = b"", time.time() + WAIT
++
++    def done(ov):
++        """Waits for a started read or connect until the time is up: whether it finished (else it's called off)."""
++        if _winapi.WaitForMultipleObjects([ov.event], False, int(max(0, end - time.time()) * 1000)) == _winapi.WAIT_OBJECT_0:
++            return True
++        ov.cancel()
++        try:
++            ov.GetOverlappedResult(True)
++        except OSError:
++            pass
++        return False
++    try:
++        r = subprocess.run(["hc", "label", tid, f"{WANT}={nonce}:{what}"], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
++        if r.returncode != 0:
++            raise Fail(f"Couldn't ask the main machine: {r.stderr.strip()}")
++        while not buf.endswith(b"\n") and time.time() < end:
++            try:
++                ov = _winapi.ConnectNamedPipe(h, overlapped=True)
++            except BrokenPipeError:  # a client came and left before this listen (error 232): listen again
++                k.DisconnectNamedPipe(h)
++                continue
++            if not done(ov):
++                break
++            try:
++                ov.GetOverlappedResult(True)
++                while not buf.endswith(b"\n"):
++                    ov, _err = _winapi.ReadFile(h, 65536, overlapped=True)
++                    if not done(ov):
++                        break
++                    n, _err = ov.GetOverlappedResult(True)
++                    buf += bytes(ov.getbuffer() or b"")[:n]
++            except BrokenPipeError:  # that client closed its end
++                pass
++            if not buf.endswith(b"\n"):
++                buf = b""
++                k.DisconnectNamedPipe(h)
++    finally:
++        _winapi.CloseHandle(h)
++        subprocess.run(["hc", "label", tid, f"{WANT}="], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
++    return answer(buf)
++
++
+ def fetch(tid, what):
+     """Asks the main machine through a label and a fresh FIFO; nothing is written to disk."""
++    if WINDOWS:
++        return fetch_nt(tid, what)
+     os.makedirs(DROP, exist_ok=True)
+     os.chmod(DROP, 0o700)
+     nonce = tokens.token_hex(16)
+@@ -522,6 +783,11 @@ def fetch(tid, what):
+         except OSError:
+             pass
+         subprocess.run(["hc", "label", tid, f"{WANT}="], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
++    return answer(buf)
++
++
++def answer(buf):
++    """The main machine's answer as it arrived: {"values": ...} or {"names": ...}; fails with its error, or when none came."""
+     if not buf.endswith(b"\n"):
+         raise Fail("The main machine didn't answer: is Herdr open there with its Tasks tab bar? Try again in a moment.")
+     try:
+@@ -574,7 +840,10 @@ def serve(address):
+     script = ('for f in "${SHEPHERDR_HOME:-/nonexistent}/state/secret-drop/$1" '
+               '"${XDG_STATE_HOME:-$HOME/.local/state}/shepherdr/secret-drop/$1" "$HOME/.herdr/secret-drop/$1"; '
+               'do [ -p "$f" ] && exec cat > "$f"; done; exit 3')
+-    r = subprocess.run(["hc", "exec", "--stdin", "--on", machine, "--timeout", "30", "--", "sh", "-c", script, "sh", nonce],
++    # A terminal on Windows (its folder isn't a "/" path) waits on a named pipe, which only a program of its own
++    # system can open: that machine's Python writes it (PIPE_WRITE), not sh.
++    put = ["python3", "-c", PIPE_WRITE, nonce] if not str((t or {}).get("cwd") or "/").startswith("/") else ["sh", "-c", script, "sh", nonce]
++    r = subprocess.run(["hc", "exec", "--stdin", "--on", machine, "--timeout", "30", "--", *put],
+                        input=body, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+     if r.returncode != 0:
+         raise Fail(f"Couldn't answer {address}: {r.stderr.decode(errors='replace').strip() or r.returncode}")
+@@ -630,11 +899,18 @@ def cmd_run(names, argv):
+     found = values(names)["values"]
+     env = dict(os.environ)
+     env.update(found)
++    if WINDOWS:
++        # Windows starts only a full name with its ending: found as a shell there finds it (npm is npm.cmd)
++        argv = [shutil.which(argv[0]) or argv[0], *argv[1:]]
+     try:
+         p = subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+     except OSError as e:
+         raise Fail(f"Couldn't run {argv[0]}: {e.strerror}")
+-    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
++    if WINDOWS:
++        # No SIGHUP there, and a signal can't be passed on: Ctrl+C reaches the command by itself (the same console),
++        # and this goes on waiting for it.
++        signal.signal(signal.SIGINT, lambda _s, _f: None)
++    for sig in () if WINDOWS else (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+         signal.signal(sig, lambda s, _f: p.send_signal(s))
+     ts = [threading.Thread(target=pump, args=(p.stdout, sys.stdout, Masker(found)), daemon=True),
+           threading.Thread(target=pump, args=(p.stderr, sys.stderr, Masker(found)), daemon=True)]
+@@ -676,9 +952,26 @@ def cmd_env(names, path):
+     keep += [f"{n}={dotenv(v)}" for n, v in found.items()]
+     tmp = f"{path}.{os.getpid()}.tmp"
+     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+-    with os.fdopen(fd, "w") as f:
++    # Windows: "\n" line ends, not its own "\r\n" (a shell that sources the file would keep the "\r" in each value)
++    with os.fdopen(fd, "w", newline="\n" if WINDOWS else None) as f:
+         f.write("\n".join(keep) + "\n")
+-    os.replace(tmp, path)
++    if WINDOWS:
++        # Windows refuses to replace a file another program has open: tried again for a moment, and the values never
++        # stay behind in the temp file (git ignores only the file itself).
++        for left in range(40, -1, -1):
++            try:
++                os.replace(tmp, path)
++                break
++            except PermissionError as e:
++                if not left:
++                    try:
++                        os.unlink(tmp)
++                    except OSError:
++                        pass
++                    raise Fail(f"Couldn't write {os.path.basename(path)}: another program has it open ({e.strerror}). Close it and try again.")
++                time.sleep(0.05)
++    else:
++        os.replace(tmp, path)
+     os.chmod(path, 0o600)
+     say(f"Wrote {', '.join(found)} to {os.path.basename(path)} (only you can read it; git ignores it). "
+         "Never print or open it in a tool that shows its contents; remove it with a plain rm.")
+diff --git a/mods/artifacts/bin/herdr-artifact b/mods/artifacts/bin/herdr-artifact
+index d0b9e8f..00a8ecc 100755
+--- a/mods/artifacts/bin/herdr-artifact
++++ b/mods/artifacts/bin/herdr-artifact
+@@ -18,7 +18,6 @@ mod with `herdr-app check`, so a broken artifact never reaches the person.
+ import argparse
+ import contextlib
+ import errno
+-import fcntl
+ import hashlib
+ import io
+ import json
+@@ -33,6 +32,51 @@ import tempfile
+ import time
+ import urllib.parse
+ 
++# Windows (a machine linked over herdr-core runs this with its own Python): files and pipes in UTF-8, as on every
++# other machine (its code page, cp949 or cp1252, would garble a recipe and other programs' output). Python's UTF-8
++# mode only takes effect at start, so it runs again in it (as herdr-task's entry does).
++if os.name == "nt" and not sys.flags.utf8_mode:
++    # Ctrl+C reaches both: the second one answers it, this one only waits and passes its exit code on.
++    signal.signal(signal.SIGINT, lambda _s, _f: None)
++    sys.exit(subprocess.call([sys.executable, "-X", "utf8", *sys.argv]))
++
++try:
++    import fcntl
++except ImportError:
++    # Windows has no fcntl: flock takes LockFileEx's shared and exclusive locks, waiting or not as asked (the same
++    # shim as herdr_task/compat.py; this file runs alone, so it carries its own).
++    import ctypes
++    import ctypes.wintypes as _w
++    import msvcrt
++    import types
++
++    class _Overlapped(ctypes.Structure):
++        _fields_ = [("Internal", ctypes.c_void_p), ("InternalHigh", ctypes.c_void_p), ("Offset", _w.DWORD),
++                    ("OffsetHigh", _w.DWORD), ("hEvent", _w.HANDLE)]
++
++    _k = ctypes.WinDLL("kernel32", use_last_error=True)
++    _k.LockFileEx.argtypes = [_w.HANDLE, _w.DWORD, _w.DWORD, _w.DWORD, _w.DWORD, ctypes.POINTER(_Overlapped)]
++    _k.LockFileEx.restype = _w.BOOL
++    _k.UnlockFileEx.argtypes = [_w.HANDLE, _w.DWORD, _w.DWORD, _w.DWORD, ctypes.POINTER(_Overlapped)]
++    _k.UnlockFileEx.restype = _w.BOOL
++
++    def _flock(f, op):
++        h = msvcrt.get_osfhandle(f if isinstance(f, int) else f.fileno())
++        # One byte far past any data: Windows locks are mandatory, so a lock there never stops a read of the file.
++        ov = _Overlapped(OffsetHigh=0x7FFFFFFF)
++        if op & 8:  # LOCK_UN
++            _k.UnlockFileEx(h, 0, 1, 0, ctypes.byref(ov))
++            return
++        flags = (2 if op & 2 else 0) | (1 if op & 4 else 0)  # LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY
++        if not _k.LockFileEx(h, flags, 0, 1, 0, ctypes.byref(ov)):
++            err = ctypes.get_last_error()
++            if err == 33:  # ERROR_LOCK_VIOLATION: held by another
++                raise BlockingIOError(11, "Resource temporarily unavailable")
++            raise ctypes.WinError(err)
++
++    fcntl = types.SimpleNamespace(LOCK_SH=1, LOCK_EX=2, LOCK_NB=4, LOCK_UN=8, flock=_flock)
++
++WINDOWS = os.name == "nt"
+ VERSION = "1"
+ HOME = os.path.expanduser("~")
+ # ---- SHEP: Shepherdr's own folders (a copy of herdr_task/layout.py's PY; test/test_layout.py checks it) ----
+@@ -96,6 +140,10 @@ ALLOWED = {".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".we
+ SKIP = {"jsconfig.json", "gpui-kit.d.ts", "herdr.d.ts", "artifact.js", "artifact-main.js", "artifact-markup.js", ".version"}
+ 
+ 
++# This herdr-artifact run again by this Python (on Windows in UTF-8 mode from the start, not by running twice).
++SELF = [sys.executable, *(["-X", "utf8"] if WINDOWS else []), os.path.realpath(__file__)]
++
++
+ class Fail(Exception):
+     pass
+ 
+@@ -125,13 +173,16 @@ def locate(path):
+     if len(lines) == 2:
+         common, top = lines
+         main = common[:-5] if common.endswith("/.git") else top
++        if WINDOWS:
++            # git writes C:/Users/...; a folder is named as Windows and herdr-app's spaces do (C:\Users\...), like herdr-task's
++            main = os.path.normpath(main)
+         return {"folder": main, "kind": "repo", "name": os.path.basename(main) or "/"}
+     return {"folder": path, "kind": "folder", "name": "~" if path == HOME else (os.path.basename(path) or "/")}
+ 
+ 
+ def slug_of(folder):
+-    rel = os.path.relpath(folder, HOME) if folder == HOME or folder.startswith(HOME + "/") else folder
+-    s = re.sub(r"[^A-Za-z0-9._-]+", "-", "home" if rel == "." else rel.strip("/")).strip("-")
++    rel = os.path.relpath(folder, HOME) if folder == HOME or folder.startswith(HOME + os.sep) else folder
++    s = re.sub(r"[^A-Za-z0-9._-]+", "-", "home" if rel == "." else rel.strip(os.sep)).strip("-")
+     return s or "root"
+ 
+ 
+@@ -149,6 +200,17 @@ def store_path(folder):
+     return slug, p
+ 
+ 
++def replace(tmp, path):
++    """os.replace. On Windows a file can't be replaced while another program has it open (the Artifacts panel
++    reading the list over herdr-core, herdr-task): tried again for a moment."""
++    for _ in range(40 if WINDOWS else 0):
++        try:
++            return os.replace(tmp, path)
++        except PermissionError:
++            time.sleep(0.05)
++    return os.replace(tmp, path)
++
++
+ class Store:
+     """One folder's artifacts, locked while open."""
+ 
+@@ -200,7 +262,7 @@ class Store:
+                 with os.fdopen(fd, "w") as f:
+                     json.dump(self.data, f, indent=1)
+                     f.write("\n")
+-                os.replace(tmp, self.path)
++                replace(tmp, self.path)
+         finally:
+             if self.lock:
+                 fcntl.flock(self.lock, fcntl.LOCK_UN)
+@@ -293,6 +355,9 @@ def gather(src):
+         dirs[:] = [d for d in dirs if not d.startswith(".") and d != "node_modules"]
+         for n in names:
+             rel = os.path.relpath(os.path.join(root, n), src)
++            if WINDOWS:
++                # named with "/" as everywhere else: recipe.json says "shots/after.png", and other machines read the list
++                rel = rel.replace(os.sep, "/")
+             if n.startswith(".") or n in SKIP or n.endswith(".error"):
+                 continue
+             if os.path.splitext(n)[1].lower() not in ALLOWED:
+@@ -393,6 +458,13 @@ def recipe_problems(src, files):
+     return out
+ 
+ 
++def no_view(files):
++    """Windows: a recipe on a machine whose herdr-artifact came by sync (no Artifacts mod, so no shared recipe view
++    beside it) while a plain Herdr app is installed. It is neither drawn to check nor installed there, as on a machine
++    with no Herdr app: its recipe.json is checked, and the window that opens it pulls it."""
++    return WINDOWS and is_recipe(files) and not os.path.isfile(RECIPE_VIEW)
++
++
+ def recipe_parts(dst):
+     """The shared recipe view in an installed (or checked) recipe artifact: main.js draws recipe.json natively."""
+     shutil.copyfile(RECIPE_VIEW, os.path.join(dst, "recipe-view.js"))
+@@ -579,7 +651,7 @@ def wrap_markup(dst):
+ def write_mod(src, files, art, mod, agent, machine=None):
+     """Installs files as the Herdr app's mod `mod`, replacing the old one in one move."""
+     mods = os.path.join(APP, "mods")
+-    if not os.path.isdir(mods):
++    if not os.path.isdir(mods) or no_view(files):
+         return None
+     tmp = os.path.join(mods, f".{mod}.new-{secrets.token_hex(3)}")
+     copy_files(src, files, tmp)
+@@ -636,6 +708,8 @@ def stage_theme(stage, light):
+                 continue
+             p = os.path.join(root, n)
+             rel = os.path.relpath(os.path.join(stage, SHIM_NAME), root)
++            if WINDOWS:
++                rel = rel.replace(os.sep, "/")  # an import's path
+             rel = rel if rel.startswith(".") else "./" + rel
+             with open(p) as f:
+                 text = f.read()
+@@ -661,7 +735,11 @@ def check_run(stage):
+         out, err = p.communicate(timeout=CHECK_TIMEOUT)
+     except subprocess.TimeoutExpired:
+         with contextlib.suppress(OSError):
+-            os.killpg(p.pid, signal.SIGKILL)
++            if WINDOWS:
++                # no process groups to signal there: taskkill ends it and everything it started
++                subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
++            else:
++                os.killpg(p.pid, signal.SIGKILL)
+         with contextlib.suppress(subprocess.TimeoutExpired):
+             p.communicate(timeout=5)
+         return None
+@@ -693,7 +771,7 @@ def check(src, files, art):
+         bad = recipe_problems(src, files)
+         if bad:
+             return "\n".join(bad[:20]), [], None
+-    if not shutil.which("herdr-app"):
++    if not shutil.which("herdr-app") or no_view(files):
+         return None, [], None
+     specs = {}
+     with tempfile.TemporaryDirectory(prefix="herdr-artifact-") as d:
+@@ -714,7 +792,7 @@ def check(src, files, art):
+                         "restart Herdr."), [], None
+             if code != 0:
+                 text = stderr.strip() or stdout.strip() or "herdr-app check failed"
+-                text = "\n".join(l for l in text.replace(stage + "/", "").replace(SHIM_NAME, "herdr").splitlines()
++                text = "\n".join(l for l in text.replace(stage + os.sep, "").replace(SHIM_NAME, "herdr").splitlines()
+                                  if not l.startswith("check failed:")).strip()
+                 return (f"In {look}: {text}" if look == "light" else text), [], None
+             specs[look] = stdout
+@@ -1156,10 +1234,11 @@ def pull(aid, machine, version=None):
+     base = f"art-{re.sub(r'[^A-Za-z0-9_-]+', '-', machine)}-{aid}"
+     if version:
+         # pack --version needs this herdr-artifact there: --on installs it when it differs.
+-        run([sys.executable, os.path.realpath(__file__), "--on", machine, "--version"])
++        run([*SELF, "--on", machine, "--version"])
+     with tempfile.TemporaryDirectory(prefix="herdr-artifact-") as d:
+-        p = subprocess.run(["hc", "exec", "--on", machine, "--", "sh", "-c", 'exec "$HOME/.local/bin/herdr-artifact" pack "$@"', "x", aid,
+-                            *(["--version", str(version)] if version else [])],
++        which = [aid, *(["--version", str(version)] if version else [])]
++        p = subprocess.run(["hc", "exec", "--on", machine, "--", *WINDOWS_THERE, "pack", *which] if windows(machine) else
++                           ["hc", "exec", "--on", machine, "--", "sh", "-c", 'exec "$HOME/.local/bin/herdr-artifact" pack "$@"', "x", *which],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+         if p.returncode != 0:
+             raise Fail(f"Couldn't fetch {aid} from {machine}: {p.stderr.decode().strip() or 'herdr-artifact missing there?'}")
+@@ -1307,7 +1386,7 @@ def cmd_note(o):
+             if w.returncode == 0:
+                 args += ["--image", f"~/{rel}"]
+         # Through --on, which installs this herdr-artifact there first.
+-        r = run([sys.executable, os.path.realpath(__file__), "--on", o.machine, *args])
++        r = run([*SELF, "--on", o.machine, *args])
+         try:
+             out = json.loads(r.stdout.strip().splitlines()[-1])
+         except (ValueError, IndexError):
+@@ -1366,7 +1445,7 @@ def cmd_picture(o):
+                 w = subprocess.run(["hc", "file", "write", "--on", o.machine, rel], input=f.read(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+             if w.returncode != 0:
+                 raise Fail(f"Couldn't send the picture to {o.machine}.")
+-            r = run([sys.executable, os.path.realpath(__file__), "--on", o.machine, "picture", o.id, "--version", str(o.version),
++            r = run([*SELF, "--on", o.machine, "picture", o.id, "--version", str(o.version),
+                      "--image", f"~/{rel}", "--json"])
+             try:
+                 out = json.loads(r.stdout.strip().splitlines()[-1])
+@@ -1740,6 +1819,8 @@ def open_window(o):
+     if not shutil.which("herdr-app"):
+         return None
+     mod = pull(o.id, o.machine) if o.machine else local_mod(o.id)
++    if WINDOWS and not os.path.isdir(os.path.join(APP, "mods", mod)):
++        return None  # not installed here (no_view): this machine's window has nothing to draw it with
+     if o.tab:
+         args = ["herdr-app", "do", "tab.new", "--mod", mod]
+     else:
+@@ -1852,8 +1933,10 @@ def preview_start():
+     os.makedirs(STORE, exist_ok=True)
+     with contextlib.suppress(OSError):
+         os.unlink(PREVIEW_STATE)
+-    subprocess.Popen([sys.executable, os.path.realpath(__file__), "_serve"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+-                     stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
++    # Windows has no sessions: its own process group and no console window, so it outlives this command the same way
++    apart = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
++    subprocess.Popen([*SELF, "_serve"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
++                     stderr=subprocess.DEVNULL, close_fds=True, **apart)
+     for _ in range(50):
+         time.sleep(0.1)
+         port = preview_alive()
+@@ -1961,7 +2044,7 @@ def serve_preview(idle=PREVIEW_IDLE):
+     fd, tmp = tempfile.mkstemp(dir=STORE, prefix=".tmp-")
+     with os.fdopen(fd, "w") as f:
+         json.dump({"port": srv.server_address[1], "pid": os.getpid()}, f)
+-    os.replace(tmp, PREVIEW_STATE)
++    replace(tmp, PREVIEW_STATE)
+ 
+     def watch():
+         while time.time() - last[0] < idle:
+@@ -2059,6 +2142,9 @@ def cmd_guide(_o):
+ 
+ # ---- another machine ------------------------------------------------------------------------
+ 
++# Where herdr-artifact is on another machine, under its home.
++THERE = ".local/bin/herdr-artifact"
++
+ # Shepherdr's installer holds every copy of the helpers to other machines (this file, removed by
+ # `shepherdr doctor` once the install is whole), as herdr-task's base.sync_held.
+ # Its state folder's, or an older installer's in ~/.herdr: either holds.
+@@ -2076,6 +2162,30 @@ def sync_held():
+     return None
+ 
+ 
++# herdr-artifact on a Windows machine, run by its Python itself (hc exec starts in that machine's home). Not through
++# sh as elsewhere: Git's sh there changes free text on the way (a title's quotes, a note's line breaks, "*", "/x").
++WINDOWS_THERE = ["python3", "-X", "utf8", THERE]
++
++
++def windows(machine):
++    """Whether another machine runs Windows: asked once (its Python's os.name), then kept beside the install marks."""
++    mark = os.path.join(STORE, ".remote", machine + ".os")
++    try:
++        with open(mark) as f:
++            return f.read().strip() == "nt"
++    except OSError:
++        pass
++    r = run(["hc", "exec", "--on", machine, "--", "python3", "-c", "import os; print(os.name)"])
++    kind = r.stdout.strip()
++    if r.returncode != 0 or kind not in ("nt", "posix"):
++        return False
++    with contextlib.suppress(OSError):
++        os.makedirs(os.path.dirname(mark), exist_ok=True)
++        with open(mark, "w") as f:
++            f.write(kind)
++    return kind == "nt"
++
++
+ def remote(machine, argv):
+     """Runs herdr-artifact on the machine that holds the folder, installing it there first."""
+     me_ = os.path.realpath(__file__)
+@@ -2083,7 +2193,8 @@ def remote(machine, argv):
+         body = f.read()
+     digest = hashlib.sha1(body).hexdigest()
+     mark = os.path.join(STORE, ".remote", machine)
+-    target = ".local/bin/herdr-artifact"
++    target = THERE
++    win = windows(machine)
+     try:
+         with open(mark) as f:
+             installed = f.read().strip() == digest
+@@ -2098,7 +2209,8 @@ def remote(machine, argv):
+         r = subprocess.run(["hc", "file", "write", "--on", machine, target], input=body, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+         if r.returncode != 0:
+             raise Fail(f"Couldn't install herdr-artifact on {machine}: {r.stderr.decode().strip()}")
+-        subprocess.run(["hc", "exec", "--on", machine, "--", "chmod", "+x", target], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++        if not win:  # Windows has no chmod, and needs none: its Python runs the file
++            subprocess.run(["hc", "exec", "--on", machine, "--", "chmod", "+x", target], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+         os.makedirs(os.path.dirname(mark), exist_ok=True)
+         with open(mark, "w") as f:
+             f.write(digest)
+@@ -2106,9 +2218,11 @@ def remote(machine, argv):
+     # Held (sync_held): no copy goes; the copy already there runs.
+     if not installed and not sync_held():
+         install()
+-    call = ["hc", "exec", "--on", machine, "--", "sh", "-c", 'exec "$HOME/.local/bin/herdr-artifact" "$@"', "herdr-artifact", *argv]
++    call = (["hc", "exec", "--on", machine, "--", *WINDOWS_THERE, *argv] if win else
++            ["hc", "exec", "--on", machine, "--", "sh", "-c", 'exec "$HOME/.local/bin/herdr-artifact" "$@"', "herdr-artifact", *argv])
+     r = run(call)
+-    if r.returncode == 127 or ("not found" in r.stderr and not r.stdout):
++    # not there: sh's 127 or "not found"; on Windows, Python's own exit 2 with "can't open file"
++    if r.returncode == 127 or ("not found" in r.stderr and not r.stdout) or (win and r.returncode == 2 and "can't open file" in r.stderr):
+         install()
+         r = run(call)
+     sys.stderr.write(r.stderr)
