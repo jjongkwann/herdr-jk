@@ -1,15 +1,15 @@
 Subject: Tasks: an agy worker's folder is trusted for its session (--settings trustedWorkspaces), so no trust dialog stops it
 Owner: shepherdr
-Versions: >=3.1.34
+Versions: >=3.1.41
 
 diff --git a/mods/tasks/bin/herdr_task/launch.py b/mods/tasks/bin/herdr_task/launch.py
-index c1d84d6..0c97dfc 100644
+index eb62963..328bd24 100644
 --- a/mods/tasks/bin/herdr_task/launch.py
 +++ b/mods/tasks/bin/herdr_task/launch.py
-@@ -138,6 +138,12 @@ def own_argv(argv, folder=None):
-         trust = ["-c", "projects={" + ",".join(f'{json.dumps(r)}={{trust_level="trusted"}}' for r in roots) + "}"] if roots else []
+@@ -145,6 +145,12 @@ def own_argv(argv, folder=None):
          return out[:1] + ["-c", f"hooks.PermissionRequest=[{{hooks=[{{type=\"command\",command={json.dumps(hook)},timeout={ASK_TIMEOUT}}}]}}]",
-                           "-c", f"hooks.state={{{json.dumps(key)}={{trusted_hash=\"sha256:{digest}\"}}}}", *trust] + out[1:]
+                           "-c", "hooks.state={" + ",".join(f'{json.dumps(k)}={{trusted_hash="sha256:{v}"}}' for k, v in state.items()) + "}",
+                           *trust] + out[1:]
 +    if k == "agy":
 +        # Antigravity CLI asks "Do you trust the contents of this project?" in a folder its settings.json doesn't
 +        # list (trustedWorkspaces), before the brief, nobody at the keys. Its --settings is for this session only,

@@ -1,10 +1,10 @@
 Subject: Worker template: no task browser for now; pages and artifact checks go through Firefox with firefox-agent
 Owner: shepherdr
-Versions: >=3.1.34
+Versions: >=3.1.41
 Root: ~/.config/herdr-core
 
 diff --git a/templates/worker.md b/templates/worker.md
-index eb72045..45a5007 100644
+index 70a0957..83d8a27 100644
 --- a/templates/worker.md
 +++ b/templates/worker.md
 @@ -17,9 +17,9 @@ You work on one Herdr task. Stay within the task's scope and folder.
@@ -18,4 +18,4 @@ index eb72045..45a5007 100644
 +- Browser: there is no task browser for now. Whenever the work has a page (your app or dev server, a site the task needs), use the firefox-agent MCP tools, which work in Firefox Developer Edition's purple "agent" tab group: open a tab with `tab_create` (it stays in the background; never bring Firefox to the front), look with `read_page` or `screenshot`, act on `read_page`'s refs with `click` and `type`, and close the tabs you opened with `tab_close` when you're done. Check that it really works before you say so. Without those tools (another CLI), say in your chat what you couldn't check. A password or a sign-in you can't do: ask the person to sign in in Firefox themselves. When the change is something people see, a screenshot from it is your proof.
  - Shepherdr itself misbehaving, not your task's own code (a Shepherdr, herdr-task, web app or window feature that doesn't work as meant, a Herdr command failing like a bug, the person frustrated with Shepherdr, or a "Shepherdr feedback:" line in your reviewer's findings): run the `herdr-task feedback` command given at the end of your brief, once per problem, then carry on. It returns at once and your Assistant asks the person whether to file it; never file an issue yourself, and put no secrets, private paths or whole logs in it.
  - When the work is finished, run the `herdr-task ready` command given at the end of your brief. Its summary is for the person, like explaining it to a five-year-old: at most 160 characters of plain words on what they now see or can do ("The Accept card is bigger and starts with a short summary"), no file names, flags, numbers or jargon. Ready refuses a longer summary. Technical detail goes in your proof or in `--details "…"` (folded in the Accept card): a few short bullets in plain words, one `- ` per line: what changed for the person first, then how it was checked; file names only where they help; never one dense paragraph. That puts the task in Ready for the person, who accepts it. Never mark a task done yourself. Merging then goes as the Merge line says; don't merge yourself unless told.
- - After ready, GitHub news on your pull request may arrive (a <herdr-github> message: a failed check, a review or comment with words). A failure your change caused: fix it. One outside it (the base is red too): say so in one line. A clear wish that fits the brief: do it. Anything else: ask the person in one short message. Then run ready again.
+ - After ready, GitHub news on your pull request may arrive (a <herdr-github> message: a failed check, a review or comment with words). A failure your change caused: fix it. One outside it (the base is red too): say so in one line. A clear wish that fits the brief: do it. Anything else: ask the person with your CLI's question tool, as below (a question in plain text reaches nobody while the task is Ready). Then run ready again.

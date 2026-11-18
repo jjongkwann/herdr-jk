@@ -1,6 +1,6 @@
 Subject: herdr-artifact and herdr-secret on a Windows machine
 Owner: shepherdr
-Versions: >=3.1.34
+Versions: >=3.1.41
 
 diff --git a/bin/herdr-secret b/bin/herdr-secret
 index 83d6cdc..5a5ea89 100755
@@ -414,7 +414,7 @@ index 83d6cdc..5a5ea89 100755
      say(f"Wrote {', '.join(found)} to {os.path.basename(path)} (only you can read it; git ignores it). "
          "Never print or open it in a tool that shows its contents; remove it with a plain rm.")
 diff --git a/mods/artifacts/bin/herdr-artifact b/mods/artifacts/bin/herdr-artifact
-index d0b9e8f..00a8ecc 100755
+index 6beb07d..20361bc 100755
 --- a/mods/artifacts/bin/herdr-artifact
 +++ b/mods/artifacts/bin/herdr-artifact
 @@ -18,7 +18,6 @@ mod with `herdr-app check`, so a broken artifact never reaches the person.
@@ -425,9 +425,9 @@ index d0b9e8f..00a8ecc 100755
  import hashlib
  import io
  import json
-@@ -33,6 +32,51 @@ import tempfile
- import time
+@@ -35,6 +34,51 @@ import time
  import urllib.parse
+ import zlib
  
 +# Windows (a machine linked over herdr-core runs this with its own Python): files and pipes in UTF-8, as on every
 +# other machine (its code page, cp949 or cp1252, would garble a recipe and other programs' output). Python's UTF-8
@@ -477,7 +477,7 @@ index d0b9e8f..00a8ecc 100755
  VERSION = "1"
  HOME = os.path.expanduser("~")
  # ---- SHEP: Shepherdr's own folders (a copy of herdr_task/layout.py's PY; test/test_layout.py checks it) ----
-@@ -96,6 +140,10 @@ ALLOWED = {".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".we
+@@ -98,6 +142,10 @@ ALLOWED = {".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".we
  SKIP = {"jsconfig.json", "gpui-kit.d.ts", "herdr.d.ts", "artifact.js", "artifact-main.js", "artifact-markup.js", ".version"}
  
  
@@ -488,7 +488,7 @@ index d0b9e8f..00a8ecc 100755
  class Fail(Exception):
      pass
  
-@@ -125,13 +173,16 @@ def locate(path):
+@@ -127,13 +175,16 @@ def locate(path):
      if len(lines) == 2:
          common, top = lines
          main = common[:-5] if common.endswith("/.git") else top
@@ -507,7 +507,7 @@ index d0b9e8f..00a8ecc 100755
      return s or "root"
  
  
-@@ -149,6 +200,17 @@ def store_path(folder):
+@@ -151,6 +202,17 @@ def store_path(folder):
      return slug, p
  
  
@@ -523,9 +523,9 @@ index d0b9e8f..00a8ecc 100755
 +
 +
  class Store:
-     """One folder's artifacts, locked while open."""
+     """One folder's artifacts: a change holds the folder's lock while open; a read takes none."""
  
-@@ -200,7 +262,7 @@ class Store:
+@@ -199,7 +261,7 @@ class Store:
                  with os.fdopen(fd, "w") as f:
                      json.dump(self.data, f, indent=1)
                      f.write("\n")
@@ -534,7 +534,7 @@ index d0b9e8f..00a8ecc 100755
          finally:
              if self.lock:
                  fcntl.flock(self.lock, fcntl.LOCK_UN)
-@@ -293,6 +355,9 @@ def gather(src):
+@@ -292,6 +354,9 @@ def gather(src):
          dirs[:] = [d for d in dirs if not d.startswith(".") and d != "node_modules"]
          for n in names:
              rel = os.path.relpath(os.path.join(root, n), src)
@@ -544,7 +544,7 @@ index d0b9e8f..00a8ecc 100755
              if n.startswith(".") or n in SKIP or n.endswith(".error"):
                  continue
              if os.path.splitext(n)[1].lower() not in ALLOWED:
-@@ -393,6 +458,13 @@ def recipe_problems(src, files):
+@@ -392,6 +457,13 @@ def recipe_problems(src, files):
      return out
  
  
@@ -558,7 +558,7 @@ index d0b9e8f..00a8ecc 100755
  def recipe_parts(dst):
      """The shared recipe view in an installed (or checked) recipe artifact: main.js draws recipe.json natively."""
      shutil.copyfile(RECIPE_VIEW, os.path.join(dst, "recipe-view.js"))
-@@ -579,7 +651,7 @@ def wrap_markup(dst):
+@@ -578,7 +650,7 @@ def wrap_markup(dst):
  def write_mod(src, files, art, mod, agent, machine=None):
      """Installs files as the Herdr app's mod `mod`, replacing the old one in one move."""
      mods = os.path.join(APP, "mods")
@@ -567,7 +567,7 @@ index d0b9e8f..00a8ecc 100755
          return None
      tmp = os.path.join(mods, f".{mod}.new-{secrets.token_hex(3)}")
      copy_files(src, files, tmp)
-@@ -636,6 +708,8 @@ def stage_theme(stage, light):
+@@ -635,6 +707,8 @@ def stage_theme(stage, light):
                  continue
              p = os.path.join(root, n)
              rel = os.path.relpath(os.path.join(stage, SHIM_NAME), root)
@@ -576,7 +576,7 @@ index d0b9e8f..00a8ecc 100755
              rel = rel if rel.startswith(".") else "./" + rel
              with open(p) as f:
                  text = f.read()
-@@ -661,7 +735,11 @@ def check_run(stage):
+@@ -662,7 +736,11 @@ def check_run(stage):
          out, err = p.communicate(timeout=CHECK_TIMEOUT)
      except subprocess.TimeoutExpired:
          with contextlib.suppress(OSError):
@@ -589,7 +589,7 @@ index d0b9e8f..00a8ecc 100755
          with contextlib.suppress(subprocess.TimeoutExpired):
              p.communicate(timeout=5)
          return None
-@@ -693,7 +771,7 @@ def check(src, files, art):
+@@ -696,7 +774,7 @@ def check(src, files, art):
          bad = recipe_problems(src, files)
          if bad:
              return "\n".join(bad[:20]), [], None
@@ -598,7 +598,7 @@ index d0b9e8f..00a8ecc 100755
          return None, [], None
      specs = {}
      with tempfile.TemporaryDirectory(prefix="herdr-artifact-") as d:
-@@ -714,7 +792,7 @@ def check(src, files, art):
+@@ -717,7 +795,7 @@ def check(src, files, art):
                          "restart Herdr."), [], None
              if code != 0:
                  text = stderr.strip() or stdout.strip() or "herdr-app check failed"
@@ -607,7 +607,7 @@ index d0b9e8f..00a8ecc 100755
                                   if not l.startswith("check failed:")).strip()
                  return (f"In {look}: {text}" if look == "light" else text), [], None
              specs[look] = stdout
-@@ -1156,10 +1234,11 @@ def pull(aid, machine, version=None):
+@@ -1199,10 +1277,11 @@ def pull(aid, machine, version=None):
      base = f"art-{re.sub(r'[^A-Za-z0-9_-]+', '-', machine)}-{aid}"
      if version:
          # pack --version needs this herdr-artifact there: --on installs it when it differs.
@@ -622,7 +622,7 @@ index d0b9e8f..00a8ecc 100755
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
          if p.returncode != 0:
              raise Fail(f"Couldn't fetch {aid} from {machine}: {p.stderr.decode().strip() or 'herdr-artifact missing there?'}")
-@@ -1307,7 +1386,7 @@ def cmd_note(o):
+@@ -1488,7 +1567,7 @@ def cmd_note(o):
              if w.returncode == 0:
                  args += ["--image", f"~/{rel}"]
          # Through --on, which installs this herdr-artifact there first.
@@ -631,7 +631,7 @@ index d0b9e8f..00a8ecc 100755
          try:
              out = json.loads(r.stdout.strip().splitlines()[-1])
          except (ValueError, IndexError):
-@@ -1366,7 +1445,7 @@ def cmd_picture(o):
+@@ -1547,7 +1626,7 @@ def cmd_picture(o):
                  w = subprocess.run(["hc", "file", "write", "--on", o.machine, rel], input=f.read(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
              if w.returncode != 0:
                  raise Fail(f"Couldn't send the picture to {o.machine}.")
@@ -640,7 +640,7 @@ index d0b9e8f..00a8ecc 100755
                       "--image", f"~/{rel}", "--json"])
              try:
                  out = json.loads(r.stdout.strip().splitlines()[-1])
-@@ -1740,6 +1819,8 @@ def open_window(o):
+@@ -1921,6 +2000,8 @@ def open_window(o):
      if not shutil.which("herdr-app"):
          return None
      mod = pull(o.id, o.machine) if o.machine else local_mod(o.id)
@@ -649,20 +649,24 @@ index d0b9e8f..00a8ecc 100755
      if o.tab:
          args = ["herdr-app", "do", "tab.new", "--mod", mod]
      else:
-@@ -1852,8 +1933,10 @@ def preview_start():
+@@ -2038,12 +2119,14 @@ def preview_start():
+         return port
      os.makedirs(STORE, exist_ok=True)
-     with contextlib.suppress(OSError):
-         os.unlink(PREVIEW_STATE)
--    subprocess.Popen([sys.executable, os.path.realpath(__file__), "_serve"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
--                     stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+     why = None
 +    # Windows has no sessions: its own process group and no console window, so it outlives this command the same way
 +    apart = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
-+    subprocess.Popen([*SELF, "_serve"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-+                     stderr=subprocess.DEVNULL, close_fds=True, **apart)
-     for _ in range(50):
-         time.sleep(0.1)
-         port = preview_alive()
-@@ -1961,7 +2044,7 @@ def serve_preview(idle=PREVIEW_IDLE):
+     for _ in (1, 2):
+         with contextlib.suppress(OSError):
+             os.unlink(PREVIEW_STATE)
+         with open(PREVIEW_LOG, "w") as log:
+-            p = subprocess.Popen([sys.executable, os.path.realpath(__file__), "_serve"], stdin=subprocess.DEVNULL,
+-                                 stdout=log, stderr=log, start_new_session=True, close_fds=True)
++            p = subprocess.Popen([*SELF, "_serve"], stdin=subprocess.DEVNULL, stdout=log, stderr=log, close_fds=True,
++                                 **apart)
+         end = time.time() + PREVIEW_WAIT
+         while time.time() < end:
+             time.sleep(0.1)
+@@ -2166,7 +2249,7 @@ def serve_preview(idle=PREVIEW_IDLE):
      fd, tmp = tempfile.mkstemp(dir=STORE, prefix=".tmp-")
      with os.fdopen(fd, "w") as f:
          json.dump({"port": srv.server_address[1], "pid": os.getpid()}, f)
@@ -671,7 +675,7 @@ index d0b9e8f..00a8ecc 100755
  
      def watch():
          while time.time() - last[0] < idle:
-@@ -2059,6 +2142,9 @@ def cmd_guide(_o):
+@@ -2264,6 +2347,9 @@ def cmd_guide(_o):
  
  # ---- another machine ------------------------------------------------------------------------
  
@@ -681,7 +685,7 @@ index d0b9e8f..00a8ecc 100755
  # Shepherdr's installer holds every copy of the helpers to other machines (this file, removed by
  # `shepherdr doctor` once the install is whole), as herdr-task's base.sync_held.
  # Its state folder's, or an older installer's in ~/.herdr: either holds.
-@@ -2076,6 +2162,30 @@ def sync_held():
+@@ -2281,6 +2367,30 @@ def sync_held():
      return None
  
  
@@ -712,7 +716,7 @@ index d0b9e8f..00a8ecc 100755
  def remote(machine, argv):
      """Runs herdr-artifact on the machine that holds the folder, installing it there first."""
      me_ = os.path.realpath(__file__)
-@@ -2083,7 +2193,8 @@ def remote(machine, argv):
+@@ -2288,7 +2398,8 @@ def remote(machine, argv):
          body = f.read()
      digest = hashlib.sha1(body).hexdigest()
      mark = os.path.join(STORE, ".remote", machine)
@@ -722,7 +726,7 @@ index d0b9e8f..00a8ecc 100755
      try:
          with open(mark) as f:
              installed = f.read().strip() == digest
-@@ -2098,7 +2209,8 @@ def remote(machine, argv):
+@@ -2303,7 +2414,8 @@ def remote(machine, argv):
          r = subprocess.run(["hc", "file", "write", "--on", machine, target], input=body, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
          if r.returncode != 0:
              raise Fail(f"Couldn't install herdr-artifact on {machine}: {r.stderr.decode().strip()}")
@@ -732,7 +736,7 @@ index d0b9e8f..00a8ecc 100755
          os.makedirs(os.path.dirname(mark), exist_ok=True)
          with open(mark, "w") as f:
              f.write(digest)
-@@ -2106,9 +2218,11 @@ def remote(machine, argv):
+@@ -2311,9 +2423,11 @@ def remote(machine, argv):
      # Held (sync_held): no copy goes; the copy already there runs.
      if not installed and not sync_held():
          install()

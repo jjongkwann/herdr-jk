@@ -1,6 +1,6 @@
-Subject: Tasks on a Windows machine: herdr-task runs there (locks, UTF-8, native remote calls, C:\ folders, a native agent launcher, review, tick)
+Subject: Tasks on a Windows machine: herdr-task runs there (locks, UTF-8, native remote calls and actions, C:\ folders, a native agent launcher, the process table, review, tick)
 Owner: shepherdr
-Versions: >=3.1.34
+Versions: >=3.1.41
 
 diff --git a/mods/tasks/bin/herdr-task b/mods/tasks/bin/herdr-task
 index d954b5b..398869c 100755
@@ -20,10 +20,10 @@ index d954b5b..398869c 100755
  sys.dont_write_bytecode = True
  sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 diff --git a/mods/tasks/bin/herdr_task/agents.py b/mods/tasks/bin/herdr_task/agents.py
-index 910728b..f1c38e6 100644
+index fc707ae..f355843 100644
 --- a/mods/tasks/bin/herdr_task/agents.py
 +++ b/mods/tasks/bin/herdr_task/agents.py
-@@ -53,10 +53,25 @@ def detail(k):
+@@ -54,10 +54,25 @@ def detail(k):
      return hc_json("get", k["address"]) or k
  
  
@@ -50,21 +50,20 @@ index 910728b..f1c38e6 100644
              return True
          # fish keeps the agent its child, in its own process group (#780): the terminal's foreground
          # stays the shell running its launch command (fish -ic "claude …; exec fish -i") the whole
-@@ -876,7 +891,11 @@ def codex_working(k):
+@@ -931,7 +946,10 @@ def codex_working(k):
      if not fg.get("pid"):
          return True
-     children = {}
--    for line in run(["ps", "-axo", "pid=,ppid=,args="]).stdout.splitlines():
+     children, started = {}, {}
+-    out = run(["ps", "-axo", "pid=,ppid=,lstart=,args="], env=dict(os.environ, LC_ALL="C", LANG="C")).stdout
 +    try:
-+        listing = run(["ps", "-axo", "pid=,ppid=,args="]).stdout
-+    except OSError:  # Windows: no ps
++        out = run(["ps", "-axo", "pid=,ppid=,lstart=,args="], env=dict(os.environ, LC_ALL="C", LANG="C")).stdout
++    except OSError:  # Windows: no ps, so its log decides, as for an unknown pid
 +        return True
-+    for line in listing.splitlines():
-         parts = line.split(None, 2)
-         if len(parts) >= 2 and parts[1].isdigit():
-             children.setdefault(parts[1], []).append(parts)
+     for line in out.splitlines():
+         parts = line.split(None, 7)  # pid, ppid, the five words of lstart, args
+         if len(parts) >= 7 and parts[1].isdigit():
 diff --git a/mods/tasks/bin/herdr_task/automations.py b/mods/tasks/bin/herdr_task/automations.py
-index de36ae8..dcdda37 100644
+index cdaa64b..8a6098d 100644
 --- a/mods/tasks/bin/herdr_task/automations.py
 +++ b/mods/tasks/bin/herdr_task/automations.py
 @@ -1,7 +1,7 @@
@@ -76,7 +75,7 @@ index de36ae8..dcdda37 100644
  import fnmatch
  import json
  import os
-@@ -496,7 +496,7 @@ def fetch_feed(src):
+@@ -497,7 +497,7 @@ def fetch_feed(src):
      if not src.get("machine"):
          return feed(src["folder"])
      guard(["hc"])
@@ -85,7 +84,7 @@ index de36ae8..dcdda37 100644
      try:
          r = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=FEED_TIMEOUT_S + 20)
      except subprocess.TimeoutExpired:
-@@ -764,6 +764,8 @@ def cmd_scheduler(args):
+@@ -791,6 +791,8 @@ def cmd_scheduler(args):
          # Updated, or this machine's data moved since: carry on as the new version, on the new paths.
          if script_hash() != started or (not test and WHERE.migrated != on_layout):
              fcntl.flock(me, fcntl.LOCK_UN)
@@ -108,7 +107,7 @@ index 25d2bbe..2cf05bf 100644
  import os
  import re
 diff --git a/mods/tasks/bin/herdr_task/base.py b/mods/tasks/bin/herdr_task/base.py
-index d837094..269cac9 100644
+index d837094..1bcc8e6 100644
 --- a/mods/tasks/bin/herdr_task/base.py
 +++ b/mods/tasks/bin/herdr_task/base.py
 @@ -4,7 +4,7 @@
@@ -139,26 +138,35 @@ index d837094..269cac9 100644
          return f"HC_SOCKET is {sock}"
      return None
  
-@@ -158,6 +159,26 @@ def git(cwd, *args):
+@@ -158,6 +159,35 @@ def git(cwd, *args):
      return r.returncode == 0, r.stdout.strip(), r.stderr.strip()
  
  
-+def remote_herdr_task(machine, argv):
-+    """The command that runs herdr-task (~/.local/bin/herdr-task) on another machine with these arguments. On Windows
-+    it goes to Python itself: Git's sh there mangles arguments (quotes, globs, /paths, line breaks), while a native
-+    program gets them intact. Whether a machine runs Windows is asked once and kept (STORE/.remote/<machine>.os)."""
++def remote_os(machine):
++    """Another machine's os.name ("nt" on Windows, "posix"), asked once and kept (STORE/.remote/<machine>.os);
++    "" when it can't be asked now."""
 +    mark = os.path.join(STORE, ".remote", f"{machine}.os")
 +    try:
 +        with open(mark) as f:
 +            kind = f.read().strip()
 +    except OSError:
-+        r = run(["hc", "exec", "--on", machine, "--", "python3", "-c", "import os; print(os.name)"])
++        try:
++            r = run(["hc", "exec", "--on", machine, "--", "python3", "-c", "import os; print(os.name)"])
++        except (Fail, OSError):  # hc refused here (guard) or isn't here: not known now
++            return ""
 +        kind = (r.stdout.split() or [""])[-1] if r.returncode == 0 else ""
 +        if kind in ("nt", "posix"):
 +            os.makedirs(os.path.dirname(mark), exist_ok=True)
 +            with open(mark, "w") as f:
 +                f.write(kind)
-+    if kind == "nt":
++    return kind
++
++
++def remote_herdr_task(machine, argv):
++    """The command that runs herdr-task (~/.local/bin/herdr-task) on another machine with these arguments. On Windows
++    it goes to Python itself: Git's sh there mangles arguments (quotes, globs, /paths, line breaks), while a native
++    program gets them intact."""
++    if remote_os(machine) == "nt":
 +        return ["python3", "-X", "utf8", ".local/bin/herdr-task", *argv]
 +    return ["sh", "-c", 'exec "$HOME/.local/bin/herdr-task" "$@"', "herdr-task", *argv]
 +
@@ -167,19 +175,19 @@ index d837094..269cac9 100644
      r = run(["hc", *args, "--json"])
      if r.returncode != 0:
 diff --git a/mods/tasks/bin/herdr_task/cli.py b/mods/tasks/bin/herdr_task/cli.py
-index 3d35477..0dd7fdf 100644
+index 2e87600..5d31c13 100644
 --- a/mods/tasks/bin/herdr_task/cli.py
 +++ b/mods/tasks/bin/herdr_task/cli.py
-@@ -8,7 +8,7 @@ import shutil
- import subprocess
- import sys
+@@ -10,7 +10,7 @@ import sys
+ import time
  
+ from . import link
 -from .base import bundle, Fail, guard, run, STORE, sync_held, VERSION
 +from .base import bundle, Fail, guard, remote_herdr_task, run, STORE, sync_held, VERSION
  from .agents import LINE_MAX, SUMMARY_MAX
  from .launch import cmd_allow, name_tabs
  from .commands import (
-@@ -81,7 +81,8 @@ def remote_run(machine, argv, timeout=None):
+@@ -86,7 +86,8 @@ def remote_run(machine, argv, timeout=None):
          r = subprocess.run(["hc", "file", "write", "--on", machine, target], input=body, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
          if r.returncode != 0:
              raise Fail(f"Couldn't install herdr-task on {machine}: {r.stderr.decode().strip()}")
@@ -189,20 +197,20 @@ index 3d35477..0dd7fdf 100644
          os.makedirs(os.path.dirname(mark), exist_ok=True)
          with open(mark, "w") as f:
              f.write(digest)
-@@ -91,9 +92,10 @@ def remote_run(machine, argv, timeout=None):
-         install()
-     install_secret(machine)
+@@ -102,9 +103,10 @@ def remote_run(machine, argv, timeout=None):
+         # the person's action: runs there whole even when the link drops, its result read back (SHEP-227, #1055)
+         return link.action(machine, argv, install)
      wait = ["--timeout", str(timeout)] if timeout else []
 -    call = ["hc", "exec", "--on", machine, *wait, "--", "sh", "-c", 'exec "$HOME/.local/bin/herdr-task" "$@"', "herdr-task", *argv]
 +    call = ["hc", "exec", "--on", machine, *wait, "--", *remote_herdr_task(machine, argv)]
-     r = run(call)
+     r = link.again(machine, argv, lambda: run(call)) if argv[:1] and argv[0] in link.READS else run(call)
 -    if r.returncode == 127 or "not found" in r.stderr and not r.stdout:
 +    # Not there: sh's "not found" (127), or Windows' Python "can't open file".
 +    if r.returncode == 127 or ("not found" in r.stderr or "can't open file" in r.stderr) and not r.stdout:
          install()
          r = run(call)
      return r
-@@ -138,6 +140,9 @@ def remote(machine, argv):
+@@ -149,6 +151,9 @@ def remote(machine, argv):
  
  def main():
      argv = sys.argv[1:]
@@ -210,21 +218,21 @@ index 3d35477..0dd7fdf 100644
 +        from .launch import run_agent
 +        return run_agent(argv[1:])
      if argv[:1] == ["--on"] and len(argv) > 1:
-         return remote(argv[1], argv[2:])
-     if argv[:1] == ["--version"]:
+         try:
+             return remote(argv[1], argv[2:])
 diff --git a/mods/tasks/bin/herdr_task/commands.py b/mods/tasks/bin/herdr_task/commands.py
-index d0d48cd..2c291ec 100644
+index 7e87654..31cd1b9 100644
 --- a/mods/tasks/bin/herdr_task/commands.py
 +++ b/mods/tasks/bin/herdr_task/commands.py
-@@ -10,6 +10,7 @@ import subprocess
- import sys
+@@ -11,6 +11,7 @@ import sys
  import time
  
+ from . import sandbox
 +from .compat import DETACH
  from .base import Fail, git, guard, now, run, STORE, stop_note, VERSION
  from .settings import (
      agent_argv, agent_key, bare, merge_policy, review_limits, set_opts, settings_block, settings_for, space_base,
-@@ -765,7 +766,7 @@ def cmd_review(args):
+@@ -798,7 +799,7 @@ def cmd_review(args):
      if me and rv.get("reviewer") == me:
          guard(["hc"])
          subprocess.Popen(["sh", "-c", 'sleep 4; hc kill "$1" >/dev/null 2>&1; sleep 2; hc rm "$1" >/dev/null 2>&1', "x", me],
@@ -235,10 +243,10 @@ index d0d48cd..2c291ec 100644
  
 diff --git a/mods/tasks/bin/herdr_task/compat.py b/mods/tasks/bin/herdr_task/compat.py
 new file mode 100644
-index 0000000..f030714
+index 0000000..f404c95
 --- /dev/null
 +++ b/mods/tasks/bin/herdr_task/compat.py
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,103 @@
 +"""What herdr-task needs from Unix, on Windows too: file locks (fcntl.flock) and the account's home (pwd).
 +
 +On macOS and Linux these are the real modules, unchanged. On Windows (a machine linked over herdr-core runs
@@ -316,8 +324,8 @@ index 0000000..f030714
 +    _k.Process32First.argtypes = _k.Process32Next.argtypes = [ctypes.c_void_p, ctypes.POINTER(_Entry)]
 +    _k.CloseHandle.argtypes = [ctypes.c_void_p]
 +
-+    def descendants(pid):
-+        """Windows: every process under pid: [(pid, exe name, parent pid)] (no pgrep, no ps there)."""
++    def _snapshot():
++        """Windows: {parent pid: [(pid, exe name, parent pid)]} of every process now (no pgrep, no ps there)."""
 +        s, e, kids = _k.CreateToolhelp32Snapshot(2, 0), _Entry(), {}  # TH32CS_SNAPPROCESS
 +        e.dwSize = ctypes.sizeof(_Entry)
 +        ok = _k.Process32First(s, ctypes.byref(e))
@@ -325,6 +333,15 @@ index 0000000..f030714
 +            kids.setdefault(e.th32ParentProcessID, []).append((e.th32ProcessID, e.szExeFile.decode(errors="replace"), e.th32ParentProcessID))
 +            ok = _k.Process32Next(s, ctypes.byref(e))
 +        _k.CloseHandle(s)
++        return kids
++
++    def process_table():
++        """Windows: {parent pid: [child pid, ...]} of every process, all as strings (sessions._read_table's)."""
++        return {str(pp): [str(c[0]) for c in cs] for pp, cs in _snapshot().items()}
++
++    def descendants(pid):
++        """Windows: every process under pid: [(pid, exe name, parent pid)]."""
++        kids = _snapshot()
 +        out, seen, todo = [], {int(pid)}, [int(pid)]
 +        while todo:
 +            for c in kids.get(todo.pop(), []):
@@ -373,10 +390,15 @@ index c57ca9a..9850698 100644
  
  def news_line(ref, title, line, details, key):
 diff --git a/mods/tasks/bin/herdr_task/home.py b/mods/tasks/bin/herdr_task/home.py
-index 0ae8941..5e59d5c 100644
+index e3cb4bc..1cd0bf1 100644
 --- a/mods/tasks/bin/herdr_task/home.py
 +++ b/mods/tasks/bin/herdr_task/home.py
-@@ -18,7 +18,7 @@ import re
+@@ -20,11 +20,12 @@ window, or windows that don't link to each other, each lead as before.
+ 
+ import json
+ import os
++import platform
+ import re
  import subprocess
  import threading
  
@@ -385,7 +407,7 @@ index 0ae8941..5e59d5c 100644
  from .settings import LOCAL_MACHINE, SETTINGS
  from .output import say
  from .store import is_task_list, read_list, store_files
-@@ -207,9 +207,8 @@ def remote_report(machine, candidates, since, news_only, timeout=40):
+@@ -256,9 +257,8 @@ def remote_report(machine, candidates, since, news_only, timeout=40):
          args += ["--since", str(since)]
      if news_only:
          args.append("--news-only")
@@ -396,8 +418,17 @@ index 0ae8941..5e59d5c 100644
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=timeout + 15)
      except subprocess.TimeoutExpired:
          raise Fail("timed out")
+@@ -446,7 +446,7 @@ def home_pass(report, force=False, only=None, to=None):
+     # Its own health to a machine's home Assistant: a window tells its own; the lead, or else whoever reads it, the rest.
+     tells_home = lambda m: m is None or (not (facts.get(key(m)) or {}).get("overview") and mine(m))
+     over_to = "home:local" if lead is None else f"home:{lead}"
+-    me_name = None if lead is None else me.get("core_name") or os.uname().nodename
++    me_name = None if lead is None else me.get("core_name") or platform.node()
+     named = lambda m: m or me_name
+     for m in names:
+         k = key(m)
 diff --git a/mods/tasks/bin/herdr_task/launch.py b/mods/tasks/bin/herdr_task/launch.py
-index 08e8f9f..b372dd5 100644
+index 6713c7a..0a8582c 100644
 --- a/mods/tasks/bin/herdr_task/launch.py
 +++ b/mods/tasks/bin/herdr_task/launch.py
 @@ -15,7 +15,8 @@ import subprocess
@@ -431,7 +462,7 @@ index 08e8f9f..b372dd5 100644
  
  
  def artifact_path():
-@@ -686,6 +690,8 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
+@@ -796,6 +800,8 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
      herdr.space, which Herdr gives a pane), herdr.agent, herdr.coordinator (its coordinator's tab,
      which keeps it under a restarted coordinator) and herdr.role=reviewer for a reviewer, kept
      apart from the task's agents. Returns its record."""
@@ -440,7 +471,7 @@ index 08e8f9f..b372dd5 100644
      key = s.key(task)
      cmd = list(resume or argv)
      if not role:
-@@ -703,8 +709,14 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
+@@ -813,8 +819,14 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
      rel = ["--parent", parent, "--outlive-parent"] if parent else ["--no-parent"]
      name = agent_name(s, task, "review" if role else None)
      # HERDR_BROWSER_TASK: which task's browser herdr-browser drives (HERD-57), for it and its children.
@@ -456,7 +487,7 @@ index 08e8f9f..b372dd5 100644
      try:
          out = json.loads(r.stdout)
      except ValueError:
-@@ -730,6 +742,52 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
+@@ -840,6 +852,52 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
      return a
  
  
@@ -509,7 +540,7 @@ index 08e8f9f..b372dd5 100644
  def is_coordinator(k):
      return (k.get("labels") or {}).get("herdr.role") == "coordinator" or k.get("template") in ASSISTANT_TEMPLATES
  
-@@ -787,9 +845,8 @@ def track(s, task, address):
+@@ -897,9 +955,8 @@ def track(s, task, address):
      """Watches the agent in the background and records its session as it changes, so a stopped
      task can be resumed later."""
      me = ENTRY
@@ -537,6 +568,67 @@ index 03b795c..0a63698 100644
  import hashlib
  import json
  import os
+diff --git a/mods/tasks/bin/herdr_task/link.py b/mods/tasks/bin/herdr_task/link.py
+index 4155d9a..4222f8f 100644
+--- a/mods/tasks/bin/herdr_task/link.py
++++ b/mods/tasks/bin/herdr_task/link.py
+@@ -19,7 +19,7 @@ import secrets
+ import subprocess
+ import time
+ 
+-from .base import run
++from .base import remote_os, run
+ 
+ # What the person does from the window, the web app or a menu: run there whole, result read back.
+ ACTIONS = {"add", "start", "done", "accept", "reopen", "unarchive", "edit", "rm", "review", "review-more", "star",
+@@ -39,10 +39,34 @@ unset HC_TERMINAL_ID HC_TERMINAL_SOCKET TERM_PROGRAM
+ "$b" "$@" > "$d/$j.out" 2> "$d/$j.err" < /dev/null
+ echo $? > "$d/$j.rc.new" && mv "$d/$j.rc.new" "$d/$j.rc"'''
+ 
++# The same on Windows, in Python: Git's sh there mangles arguments (quotes, globs, /paths, line breaks) and has
++# no herdr-task to run but through Python. Its folder is JOBS_NT's, which POLL reads there.
++JOBS_NT = 'os.path.join(tempfile.gettempdir(), "herdr-task-jobs-" + (os.environ.get("USERNAME") or "me"))'
++RUN_NT = r'''import os, subprocess, sys, tempfile, time
++d = ''' + JOBS_NT + r'''
++os.makedirs(d, exist_ok=True)
++j, b, argv = sys.argv[1], sys.argv[2] or os.path.join(os.path.expanduser("~"), ".local", "bin", "herdr-task"), sys.argv[3:]
++p = lambda e: os.path.join(d, j + e)
++open(p(".out"), "w").close()
++for n in os.listdir(d):
++    try:
++        if os.path.getmtime(os.path.join(d, n)) < time.time() - 3600:
++            os.remove(os.path.join(d, n))
++    except OSError:
++        pass
++env = {k: v for k, v in os.environ.items() if k not in ("HC_TERMINAL_ID", "HC_TERMINAL_SOCKET", "TERM_PROGRAM")}
++with open(p(".out"), "w") as o, open(p(".err"), "w") as e:
++    rc = subprocess.call([sys.executable, "-X", "utf8", b, *argv], stdout=o, stderr=e, stdin=subprocess.DEVNULL,
++                         env=env) if os.path.isfile(b) else 127
++with open(p(".rc.new"), "w") as f:
++    f.write(str(rc))
++os.replace(p(".rc.new"), p(".rc"))'''
++
+ # There: "none" (never started), "running", or "done" and its {rc, out, err} on the next line. Kept: a reply lost
+ # on the way back is read again.
+-POLL = r'''import json, os, sys
+-d = os.path.join(os.environ.get("TMPDIR") or "/tmp", "herdr-task-jobs-%d" % os.getuid())
++POLL = r'''import json, os, sys, tempfile
++d = (''' + JOBS_NT + r''' if os.name == "nt" else
++     os.path.join(os.environ.get("TMPDIR") or "/tmp", "herdr-task-jobs-%d" % os.getuid()))
+ p = lambda e: os.path.join(d, sys.argv[1] + e)
+ if not os.path.exists(p(".rc")):
+     print("running" if os.path.exists(p(".out")) else "none")
+@@ -95,8 +119,9 @@ def _say(argv, rc, data):
+ 
+ 
+ def start(machine, job, argv):
++    there = ["python3", "-X", "utf8", "-c", RUN_NT] if remote_os(machine) == "nt" else ["sh", "-c", RUN, "sh"]
+     return run(["hc", "run", "--bg", "--rm", "--no-parent", "--no-notify", "--json", "--label", "herdr.role=action",
+-                "--label", f"herdr.action={job}", "--on", machine, "--", "sh", "-c", RUN, "sh", job,
++                "--label", f"herdr.action={job}", "--on", machine, "--", *there, job,
+                 os.environ.get("HERDR_TASK_REMOTE_BIN", ""), *argv])
+ 
+ 
 diff --git a/mods/tasks/bin/herdr_task/machine.py b/mods/tasks/bin/herdr_task/machine.py
 index 8318024..cb96f05 100644
 --- a/mods/tasks/bin/herdr_task/machine.py
@@ -579,10 +671,10 @@ index 8318024..cb96f05 100644
      disks = _disks()
      return {"at": int(time.time() * 1000), "cores": cores, "load": round(load, 2), "cpu": round(load * 100 / cores),
 diff --git a/mods/tasks/bin/herdr_task/machines.py b/mods/tasks/bin/herdr_task/machines.py
-index dae8242..6fce17c 100644
+index bb1c71c..5479df3 100644
 --- a/mods/tasks/bin/herdr_task/machines.py
 +++ b/mods/tasks/bin/herdr_task/machines.py
-@@ -11,10 +11,11 @@ normal: a machine reachable from here may not reach back.
+@@ -12,10 +12,11 @@ links are normal: a machine reachable from here may not reach back.
  """
  
  import base64
@@ -594,8 +686,8 @@ index dae8242..6fce17c 100644
 +import platform
  import re
  import shlex
- import subprocess
-@@ -157,10 +158,17 @@ def manifest():
+ import shutil
+@@ -161,10 +162,17 @@ def manifest():
  # what it found. Each file: written beside its place, tried (its --version), the old one kept as
  # <file>.bak, then swapped in one step (os.replace).
  INSTALL = r'''
@@ -614,7 +706,7 @@ index dae8242..6fce17c 100644
  ''' + layout.PY + r'''
  # Shepherdr's own files (the stamp, the secrets' marks) where they are on that machine: its own
  # folders once its data moved there, else ~/.herdr (SHEP: herdr_task/layout.py).
-@@ -180,7 +188,7 @@ rec = stamp.get("files") or {}
+@@ -184,7 +192,7 @@ rec = stamp.get("files") or {}
  # where copies come from: never written to.
  source = os.path.isdir(P(".config/herdr-app/mods/tasks/bin/herdr_task"))
  out = {"source": source, "files": {}, "links": {}, "stamp": {k: stamp.get(k) for k in ("version", "from", "at")},
@@ -623,7 +715,7 @@ index dae8242..6fce17c 100644
  for f in x["files"]:
      p, r = P(f["path"]), rec.get(f["path"]) or {}
      cur = sha(p)
-@@ -277,7 +285,7 @@ print(json.dumps(out))
+@@ -281,7 +289,7 @@ print(json.dumps(out))
  def core_name():
      """This machine's herdr-core name (what other machines' cores call it by default)."""
      d = hc_json("server", "status") or {}
@@ -632,7 +724,7 @@ index dae8242..6fce17c 100644
  
  
  def connected_machines():
-@@ -429,7 +437,7 @@ def _spawn(argv, log):
+@@ -435,7 +443,7 @@ def _spawn(argv, log):
      """A detached herdr-task run, so the scheduler's round never waits on another machine."""
      os.makedirs(STORE, exist_ok=True)
      with open(os.path.join(STORE, log), "a") as out:
@@ -641,16 +733,16 @@ index dae8242..6fce17c 100644
                           cwd=HOME)
  
  
-@@ -502,7 +510,7 @@ def cmd_sync_auto(names):
- # (`hc exec --on`, or ssh), and puts the answer under the link as "next".
+@@ -509,7 +517,7 @@ def cmd_sync_auto(names):
+ # opens a connection of its own: no ssh, no Tailscale, only herdr-core's links (#967).
  
  PROBE = r'''
--import json, os, re, shlex, shutil, socket, subprocess, sys, threading
-+import json, os, platform, re, shlex, shutil, socket, subprocess, sys, threading
+-import json, os, shutil, socket, subprocess, sys, threading
++import json, os, platform, shutil, socket, subprocess, sys, threading
  o = json.loads(sys.argv[1])
  H = os.path.expanduser("~")
  ''' + layout.PY + r'''
-@@ -519,7 +527,7 @@ def js(text):
+@@ -525,7 +533,7 @@ def js(text):
      except Exception:
          return None
  hc = shutil.which("hc") or (os.path.join(H, ".local/bin/hc") if os.path.isfile(os.path.join(H, ".local/bin/hc")) else None)
@@ -660,7 +752,7 @@ index dae8242..6fce17c 100644
  core = (js(sh([hc, "server", "status", "--json"])[1]) or {}).get("core") if hc else None
  me["core"] = core
 diff --git a/mods/tasks/bin/herdr_task/news.py b/mods/tasks/bin/herdr_task/news.py
-index 8f7507d..808fa85 100644
+index b38fdc0..fa13731 100644
 --- a/mods/tasks/bin/herdr_task/news.py
 +++ b/mods/tasks/bin/herdr_task/news.py
 @@ -1,11 +1,12 @@
@@ -677,7 +769,7 @@ index 8f7507d..808fa85 100644
  import time
  from contextlib import contextmanager
  
-@@ -296,6 +297,31 @@ PROMPT = re.compile(r"^\s*[❯›>]\s")   # Claude Code's input line, Codex's
+@@ -306,6 +307,31 @@ PROMPT = re.compile(r"^\s*[❯›>]\s")   # Claude Code's input line, Codex's
  RULE = re.compile(r"^\s*[─━]{8,}")     # Claude Code's box edge
  
  
@@ -709,7 +801,7 @@ index 8f7507d..808fa85 100644
  def screen_raw(address, there=None):
      """Its screen as herdr-core repaints it for a watcher (hc attach --observe: never types or
      resizes), colors and all; '' when it can't be read. there: runs a command on its machine
-@@ -307,9 +333,20 @@ def screen_raw(address, there=None):
+@@ -317,9 +343,20 @@ def screen_raw(address, there=None):
      env = {k: v for k, v in os.environ.items() if k != "HC_TERMINAL_ID"}
      p = subprocess.Popen(["hc", "attach", "--observe", address], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
      out, start, last = b"", time.time(), None
@@ -732,7 +824,7 @@ index 8f7507d..808fa85 100644
                  if not b:
                      break
 diff --git a/mods/tasks/bin/herdr_task/proof.py b/mods/tasks/bin/herdr_task/proof.py
-index 66ff6aa..91fcea5 100644
+index 4c49bdf..a931350 100644
 --- a/mods/tasks/bin/herdr_task/proof.py
 +++ b/mods/tasks/bin/herdr_task/proof.py
 @@ -17,8 +17,8 @@ FEW = 3
@@ -767,6 +859,36 @@ index 76bc5c4..f60074e 100644
      guard(["hc"])
      try:
          r = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=60)
+diff --git a/mods/tasks/bin/herdr_task/sandbox.py b/mods/tasks/bin/herdr_task/sandbox.py
+index e14c489..ab7de13 100644
+--- a/mods/tasks/bin/herdr_task/sandbox.py
++++ b/mods/tasks/bin/herdr_task/sandbox.py
+@@ -14,6 +14,7 @@ import json
+ import os
+ import shutil
+ import subprocess
++import sys
+ import time
+ 
+ from .base import WHERE
+@@ -90,7 +91,7 @@ def check(fresh=False):
+     """None when Codex's sandbox starts here (or isn't used here: not Linux, no codex), else
+     {"error": what bwrap said, "bwrap": its path, "userns": whether AppArmor's switch is on, "at"}.
+     Asked once and kept (CACHE) until what it depends on changes."""
+-    if os.uname().sysname != "Linux":
++    if not sys.platform.startswith("linux"):  # os.uname: none on Windows
+         return None
+     codex = shutil.which("codex")
+     if not codex:
+@@ -155,7 +156,7 @@ def cmd_sandbox(args):
+     from .output import say
+     b = check(fresh=bool(args.check))
+     if not b:
+-        say(args, {"ok": True}, "Codex's sandbox starts on this machine." if shutil.which("codex") and os.uname().sysname == "Linux"
++        say(args, {"ok": True}, "Codex's sandbox starts on this machine." if shutil.which("codex") and sys.platform.startswith("linux")
+             else "Nothing to check: no Codex sandbox on this machine.")
+         return 0
+     say(args, {"ok": False, **b, "notice": notice(b)}, notice(b))
 diff --git a/mods/tasks/bin/herdr_task/scheduler.py b/mods/tasks/bin/herdr_task/scheduler.py
 index 411deaa..8605cc6 100644
 --- a/mods/tasks/bin/herdr_task/scheduler.py
@@ -788,24 +910,24 @@ index 411deaa..8605cc6 100644
      started = r.returncode == 0
      return {"running": started, "started": started, "note": "Started the scheduler." if started else f"Couldn't start the scheduler: {r.stderr.strip()}"}
 diff --git a/mods/tasks/bin/herdr_task/sessions.py b/mods/tasks/bin/herdr_task/sessions.py
-index bdb3af1..e0fba50 100644
+index 5836986..a495786 100644
 --- a/mods/tasks/bin/herdr_task/sessions.py
 +++ b/mods/tasks/bin/herdr_task/sessions.py
-@@ -12,6 +12,9 @@ from .agents import agent_running, detail
- # ---- agent sessions -------------------------------------------------------------------------
+@@ -22,6 +22,9 @@ _table = {"at": None, "children": {}}
  
- def kids(pid):
-+    if os.name == "nt":  # no pgrep: a process snapshot (the agent is a child of launch.run_agent's Python there)
-+        from .compat import descendants
-+        return [str(p) for p, _, _ in descendants(pid)]
-     r = run(["pgrep", "-P", str(pid)])
-     out = []
-     for p in r.stdout.split():
+ def _read_table():
+     """{parent pid: [child pid, …]} of every process now, all as strings."""
++    if os.name == "nt":  # no /proc, no ps: a process snapshot
++        from .compat import process_table
++        return process_table()
+     children = {}
+     if os.path.isdir("/proc/self"):
+         for n in os.listdir("/proc"):
 diff --git a/mods/tasks/bin/herdr_task/settings.py b/mods/tasks/bin/herdr_task/settings.py
-index d16157b..ce48a03 100644
+index 904b9b3..8608f12 100644
 --- a/mods/tasks/bin/herdr_task/settings.py
 +++ b/mods/tasks/bin/herdr_task/settings.py
-@@ -445,7 +445,11 @@ def task_settings(s, t, space=None, argv=None):
+@@ -499,7 +499,11 @@ def task_settings(s, t, space=None, argv=None, live=False):
              if t.get(f"reviewer_{f}"):
                  rv[f] = t[f"reviewer_{f}"]
          other = {"claude": "codex", "codex": "claude"}.get(agent)
@@ -815,10 +937,10 @@ index d16157b..ce48a03 100644
 +        if found and os.name == "nt" and found.lower().endswith((".cmd", ".bat")):
 +            found = None
 +        want = rv.get("agent") or (other if found else agent)
-         who = want
+         who, said = want, ""
          if want != agent and cli_here(want) == "signed-out":
              # Signed out here, it would sit at its sign-in screen and never review (#745): the task's own CLI does.
-@@ -460,6 +464,8 @@ def task_settings(s, t, space=None, argv=None):
+@@ -529,6 +533,8 @@ def task_settings(s, t, space=None, argv=None, live=False):
          cmd = reviewer_command(who, rv.get("model"), rv.get("effort"), folder)
          if cmd:
              text += f"; start it as `{cmd}`"
@@ -827,21 +949,8 @@ index d16157b..ce48a03 100644
          add("Reviewer", text, {"agent": who, "model": rv.get("model"), "effort": rv.get("effort"), "command": cmd}, rv_by)
          must = sets.get("must_fix") or (k.get("must_fix") if k.get("must_fix") in LEVELS else "major")
          add("Must fix", MUST_WORDS[must], must, "task" if "must_fix" in sets else by_layer(s, space, "tasks", "must_fix", must, "major"))
-diff --git a/mods/tasks/bin/herdr_task/star.py b/mods/tasks/bin/herdr_task/star.py
-index 35ff74a..85bef86 100644
---- a/mods/tasks/bin/herdr_task/star.py
-+++ b/mods/tasks/bin/herdr_task/star.py
-@@ -10,7 +10,7 @@ twice, whatever the answer. The card is a plain link to the repo: nothing here s
- calls GitHub on the person's behalf.
- """
- 
--import fcntl
-+from .compat import fcntl
- import json
- import os
- import subprocess
 diff --git a/mods/tasks/bin/herdr_task/store.py b/mods/tasks/bin/herdr_task/store.py
-index f58d39d..1ef68c2 100644
+index 8e00da3..627a542 100644
 --- a/mods/tasks/bin/herdr_task/store.py
 +++ b/mods/tasks/bin/herdr_task/store.py
 @@ -1,7 +1,7 @@
@@ -853,7 +962,7 @@ index f58d39d..1ef68c2 100644
  import hashlib
  import json
  import os
-@@ -26,6 +26,8 @@ def locate(path):
+@@ -27,6 +27,8 @@ def locate(path):
      if len(lines) == 2:
          common, top = lines
          main = common[:-5] if common.endswith("/.git") else top
@@ -862,7 +971,7 @@ index f58d39d..1ef68c2 100644
          return {"folder": main, "kind": "repo", "name": os.path.basename(main) or "/", "common": common}
      name = "~" if path == HOME else (os.path.basename(path) or "/")
      return {"folder": path, "kind": "folder", "name": name, "common": None}
-@@ -33,8 +35,8 @@ def locate(path):
+@@ -47,8 +49,8 @@ def bare_by_mistake(path):
  
  def slug_of(folder):
      # Folders in home drop the home part: ~/dev/app -> dev-app, ~ -> home.
@@ -874,7 +983,7 @@ index f58d39d..1ef68c2 100644
  
  
 diff --git a/mods/tasks/bin/herdr_task/tick.py b/mods/tasks/bin/herdr_task/tick.py
-index 088bb2f..f9a63bc 100644
+index 24f5dac..c18a921 100644
 --- a/mods/tasks/bin/herdr_task/tick.py
 +++ b/mods/tasks/bin/herdr_task/tick.py
 @@ -1,7 +1,7 @@
