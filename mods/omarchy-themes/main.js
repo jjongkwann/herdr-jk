@@ -7,8 +7,8 @@ import { v_flex, h_flex } from "gpui-base";
 import { themes, settings, run, theme, props, closeOverlay, appHome, readTextFile, writeTextFile, exec, layout, shared } from "herdr";
 
 const DIR = "mods/omarchy-themes/previews";
-// The themes with a preview here (Omarchy's previews/<theme>.webp).
-const PREVIEWS = ["catppuccin", "catppuccin-latte", "ethereal", "everforest", "flexoki-light", "gruvbox", "hackerman", "jade-horse",
+// The themes with a preview here (Omarchy's previews/<theme>.webp, and one drawn for Dracula).
+const PREVIEWS = ["catppuccin", "catppuccin-latte", "dracula", "ethereal", "everforest", "flexoki-light", "gruvbox", "hackerman", "jade-horse",
   "kanagawa", "last-horizon", "lumon", "lupine", "matte-black", "miasma", "nord", "retro-82", "ristretto", "rose-pine",
   "solitude", "starship", "tokyo-night", "vantablack", "white"];
 
