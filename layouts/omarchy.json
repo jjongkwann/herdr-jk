@@ -7,7 +7,7 @@
     8
   ],
   "theme": "tokyo-night",
-  "terminal_opacity": 0.7,
+  "terminal_opacity": 0.86,
   "background": {
     "image": "backgrounds/omarchy/tokyo-night/1-winding-road.webp",
     "fit": "cover"
@@ -23,7 +23,7 @@
       "id": "topbar",
       "type": "row",
       "size": {
-        "px": 30
+        "px": 32
       },
       "background": "chrome",
       "resizable": false,
@@ -94,7 +94,7 @@
           "id": "sidebar",
           "type": "column",
           "size": {
-            "px": 243
+            "px": 268
           },
           "min": 44,
           "max": 480,
@@ -113,7 +113,7 @@
                   "id": "spaces",
                   "type": "block",
                   "size": {
-                    "weight": 1
+                    "weight": 3
                   },
                   "min": 90,
                   "content": {
@@ -121,7 +121,7 @@
                   },
                   "background": "chrome",
                   "border": {
-                    "width": 2,
+                    "width": 1,
                     "color": "border"
                   },
                   "radius": 12
@@ -130,7 +130,7 @@
                   "id": "agents",
                   "type": "block",
                   "size": {
-                    "weight": 1
+                    "weight": 4
                   },
                   "min": 90,
                   "content": {
@@ -138,7 +138,7 @@
                   },
                   "background": "chrome",
                   "border": {
-                    "width": 2,
+                    "width": 1,
                     "color": "border"
                   },
                   "radius": 12
@@ -149,7 +149,7 @@
               "id": "sidebar-footer",
               "type": "block",
               "size": {
-                "px": 84
+                "px": 40
               },
               "content": {
                 "mod": "omarchy-chrome",
@@ -159,7 +159,7 @@
               },
               "background": "chrome",
               "border": {
-                "width": 2,
+                "width": 1,
                 "color": "border"
               },
               "radius": 12
@@ -181,7 +181,7 @@
               },
               "background": "chrome",
               "border": {
-                "width": 2,
+                "width": 1,
                 "color": "border"
               },
               "content": {
@@ -227,7 +227,7 @@
                         "position": "top"
                       },
                       "border": {
-                        "width": 2,
+                        "width": 1,
                         "color": "border"
                       },
                       "focus": {
@@ -452,7 +452,7 @@
                   "hidden": true,
                   "background": "chrome",
                   "border": {
-                    "width": 2,
+                    "width": 1,
                     "color": "border"
                   },
                   "radius": 12
@@ -463,5 +463,6 @@
         }
       ]
     }
-  ]
+  ],
+  "terminal_line_height": 1.12
 }

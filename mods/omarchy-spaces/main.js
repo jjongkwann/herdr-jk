@@ -284,8 +284,7 @@ export default class Spaces extends View {
   }
 
   // The rows, under a header per machine once one isn't this computer.
-  grouped(t, collapsed) {
-    const rows = this.ordered();
+  grouped(t, collapsed, rows) {
     const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
     const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
     const loading = m => {
@@ -303,7 +302,7 @@ export default class Spaces extends View {
       const connected = !m || machine?.state === "connected";
       const rebuilt = this.rebuilt(machine) || !!repair;
       const folded = this.folded.has(m);
-      const head = h_flex().id(`machine-${m ?? "local"}`).h(24).flex_none().px(collapsed ? 0 : 8).when(collapsed, el => el.w(30).justify_center()).gap(7).items_center().text_size(11).text_color(t.dim)
+      const head = h_flex().id(`machine-${m ?? "local"}`).h(24).flex_none().when(Boolean(m), el => el.mt(6)).px(collapsed ? 0 : 8).when(collapsed, el => el.w(30).justify_center()).gap(7).items_center().rounded(6).text_size(11).font_medium().text_color(t.muted)
         .cursor_pointer().hover(s => s.bg(t.foreground + "14").text_color(t.foreground))
         .on_click((_e, cx) => {
           folded ? this.folded.delete(m) : this.folded.add(m);
@@ -320,11 +319,11 @@ export default class Spaces extends View {
               .tooltip(repair?.error || "This machine was rebuilt or replaced. Click to connect to the new one.")
               .on_click((_e, cx) => { cx.stop_propagation(); this.reconnect(machine, cx); })
               .child(repair?.busy ? "Connecting…" : "Connect"))))
-          .when(connected, el => el.child(div().id(`machine-add-${m ?? "local"}`).flex_none().px(4).rounded(0).hover(s => s.bg(t.foreground + "14").text_color(t.foreground))
+          .when(connected, el => el.child(div().id(`machine-add-${m ?? "local"}`).flex_none().px(4).rounded(6).hover(s => s.bg(t.foreground + "14").text_color(t.foreground))
             .on_click((_e, cx) => { cx.stop_propagation(); run("space.new", { machine: m ?? "" }); }).child("+")))
-          .child(div().size(6).rounded(0).flex_none().bg(connected ? t.ansi2 : t.dim))
+          .child(div().size(7).rounded(4).flex_none().bg(connected ? t.ansi2 : t.dim))
           .child(svg(`mods/omarchy-chrome/chevron-${folded ? "right" : "down"}.svg`).size(11).flex_none()));
-      const empty = h_flex().id(`machine-new-${m ?? "local"}`).h(26).flex_none().px(8).gap(7).items_center().rounded(0)
+      const empty = h_flex().id(`machine-new-${m ?? "local"}`).h(26).flex_none().px(8).gap(7).items_center().rounded(6)
         .text_size(12).text_color(t.dim).hover(s => s.bg(t.foreground + "14").text_color(t.foreground))
         .on_click(() => run("space.new", { machine: m ?? "" }))
         .child(svg("mods/omarchy-chrome/plus.svg").size(12)).when(!collapsed, el => el.child("New space there"));
@@ -365,7 +364,7 @@ export default class Spaces extends View {
       .flex_none()
       .ml(4)
       .p(2)
-      .rounded(0)
+      .rounded(6)
       .text_color(armed ? t.blocked : t.dim)
       .when(armed, (el) => el.bg(t.blocked + "26"))
       .cursor_pointer()
@@ -397,12 +396,12 @@ export default class Spaces extends View {
       .h(rowHeight({ tree }))
       .flex_none()
       .justify_center()
-      .rounded(0)
+      .rounded(6)
       .border(1)
       .border_color(t.foreground + "00")
       .when(on, (el) => el.bg(t.foreground + "2e"))
       .when(!on, (el) => el.hover((s) => s.bg(t.foreground + "14").border_color(t.foreground + "40")))
-      .when(on, (el) => el.child(div().absolute().left(-1).top(-1).bottom(-1).w(2).bg(t.accent)))
+      .when(on, (el) => el.child(div().absolute().left(1).top(5).bottom(5).w(3).rounded(2).bg(t.accent)))
       .when(this.pressed === w.id && this.over !== w.id, (el) => el.opacity(0.5))
       .when(this.pressed !== null && this.over === w.id && this.pressed !== w.id, (el) => el.child(
         div().absolute().left(0).right(0).h(2).bg(t.accent)
@@ -443,15 +442,16 @@ export default class Spaces extends View {
           .gap(8)
           .items_center()
           .when(Boolean(tree), el => el.pl(22).child(svg("mods/omarchy-chrome/branch.svg").size(13).text_color(t.dim)))
-          .when(!tree, el => el.child(h_flex().size(16).flex_none().rounded(0).items_center().justify_center().text_size(10.5).font_bold()
+          .when(!tree, el => el.child(h_flex().size(18).flex_none().rounded(4).items_center().justify_center().text_size(10.5).font_bold()
             .when(on, el => el.bg(t.accent).text_color(t.accent_foreground))
-            .when(!on, el => el.border(1).border_color(t.border).text_color(t.dim))
+            .when(!on, el => el.border(1).border_color(t.border).text_color(t.muted))
             .child(String(i + 1))))
           // A long name gives way to the close button instead of pushing it past the row's edge.
           .child(div().min_w(0).max_w(room() * 7).truncate().text_color(t.foreground).child(w.name))
           .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1())
-          // A space with an agent working, waiting on you, or finished gets a square in that status color.
-          .when(!tree && ["working", "blocked", "done"].includes(w.status), el => el.child(div().size(6).flex_none().ml(6).bg(tone(t, w.status))))
+          // A space with an agent waiting on you gets a "!"; one working or finished, a dot in that status color.
+          .when(!tree && w.status === "blocked", el => el.child(h_flex().size(16).flex_none().ml(6).rounded(4).items_center().justify_center().bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).child("!")))
+          .when(!tree && ["working", "done"].includes(w.status), el => el.child(div().size(8).flex_none().ml(6).rounded(4).bg(tone(t, w.status))))
           .when(this.hovered === w.id || this.arming === w.id, el => el.child(this.closer(t, w))),
       );
   }
@@ -467,7 +467,7 @@ export default class Spaces extends View {
       .flex()
       .items_center()
       .justify_center()
-      .rounded(0)
+      .rounded(6)
       .border(1)
       .text_size(12)
       .font_bold()
@@ -496,13 +496,17 @@ export default class Spaces extends View {
       changed = true;
     }
     if (changed) setShared("space.colors", kept);
+    // The top bar's jump button: the spaces waiting on the person, Chat agents counted in.
+    const rows = this.ordered();
+    const needs = rows.filter(r => r.w.status === "blocked").map(r => r.w.id);
+    if (JSON.stringify(shared("omarchy-spaces.needs") ?? []) !== JSON.stringify(needs)) setShared("omarchy-spaces.needs", needs);
     return v_flex().size_full().min_h(0).bg(t.chrome).pt(10).text_size(12)
       .child(h_flex().h(26).flex_none().when(collapsed, el => el.justify_center()).when(!collapsed, el => el.pl(18).pr(10).justify_between()).items_center().text_size(11).text_color(t.dim)
         .when(!collapsed, el => el.child(`spaces ${sp.length}`))
-        .child(div().id("space-new").size(22).flex_none().flex().items_center().justify_center().rounded(0).border(1).border_color(t.foreground + "00").hover(s => s.bg(t.foreground + "14").border_color(t.foreground + "40").text_color(t.foreground))
+        .child(div().id("space-new").size(22).flex_none().flex().items_center().justify_center().rounded(6).border(1).border_color(t.foreground + "00").hover(s => s.bg(t.foreground + "14").border_color(t.foreground + "40").text_color(t.foreground))
           .on_click(() => run("space.new")).child(svg("mods/omarchy-chrome/plus.svg").size(14))))
       .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 10).pt(6).pb(10).gap(collapsed ? 6 : 2).when(collapsed, el => el.items_center()).overflow_y_scrollbar().mode("always")
         .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); })
-        .children(this.grouped(t, collapsed)));
+        .children(this.grouped(t, collapsed, rows)));
   }
 }

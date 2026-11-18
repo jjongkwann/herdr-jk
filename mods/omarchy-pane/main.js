@@ -346,7 +346,7 @@ export default class Pane extends View {
       .gap(4)
       .flex_none()
       .items_center()
-      .rounded(0)
+      .rounded(4)
       .border_1()
       .border_color(t.border)
       .text_size(11)
@@ -428,7 +428,7 @@ export default class Pane extends View {
       .gap(4)
       .flex_none()
       .items_center()
-      .rounded(0)
+      .rounded(4)
       .border_1()
       .text_size(11)
       .when(on, (e) => e.bg(t.foreground + "2e").border_color(t.border).text_color(t.foreground))
@@ -455,7 +455,7 @@ export default class Pane extends View {
       .px(8)
       .flex_none()
       .items_center()
-      .rounded(0)
+      .rounded(4)
       .border_1()
       .cursor_pointer()
       .text_size(11)
@@ -584,7 +584,7 @@ export default class Pane extends View {
       .flex_none()
       .flex()
       .items_center()
-      .rounded(0)
+      .rounded(4)
       .border_1()
       .cursor_pointer()
       .when(primary, (e) => e.bg(t.blocked).border_color(t.blocked).text_color(t.background).hover((s) => s.bg(t.blocked + "d9")))
@@ -597,7 +597,7 @@ export default class Pane extends View {
       .child(label);
   }
 
-  // Chat | Terminal, two square segments; the one showing is filled.
+  // Chat | Terminal, two segments; the one showing is filled.
   switcher(t, pane, chatMode, onChat, onTerminal) {
     const seg = (id, label, on, fn) => div()
       .id(id)
@@ -605,8 +605,9 @@ export default class Pane extends View {
       .px(8)
       .flex()
       .items_center()
+      .rounded(3)
       .when(on, (e) => e.bg(t.foreground + "2e").text_color(t.foreground))
-      .when(!on, (e) => e.text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.foreground + "14").text_color(t.foreground)))
+      .when(!on, (e) => e.text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.foreground + "14").text_color(t.foreground)))
       .on_click((_e, cx) => {
         cx.stop_propagation();
         if (!on) fn(cx);
@@ -615,14 +616,15 @@ export default class Pane extends View {
       .child(label);
     return h_flex()
       .id(`ph-mode-${pane}`)
-      .h(20)
+      .h(22)
+      .p(1)
+      .gap(1)
       .flex_none()
-      .rounded(0)
+      .rounded(5)
       .border_1()
       .border_color(t.border)
       .text_size(11)
       .child(seg(`ph-chat-${pane}`, "Chat", chatMode, onChat))
-      .child(div().w(1).h_full().bg(t.border))
       .child(seg(`ph-term-${pane}`, "Terminal", !chatMode, onTerminal));
   }
 
@@ -635,7 +637,7 @@ export default class Pane extends View {
     return div()
       .id(id)
       .p(3)
-      .rounded(0)
+      .rounded(4)
       .border_1()
       .border_color(t.surface)
       .text_color(t.dim)
@@ -656,7 +658,7 @@ export default class Pane extends View {
       .flex_none()
       .items_center()
       .justify_center()
-      .rounded(0)
+      .rounded(4)
       .border_1()
       .border_color(t.surface)
       .gap(4)
@@ -704,7 +706,7 @@ export default class Pane extends View {
         .h(24)
         .px(8)
         .items_center()
-        .rounded(0)
+        .rounded(4)
         .border_1()
         .border_color(this.typing ? t.accent : t.border)
         .bg(t.background)
@@ -731,7 +733,7 @@ export default class Pane extends View {
         .px(6)
         .flex_none()
         .items_center()
-        .rounded(0)
+        .rounded(4)
         .cursor_pointer()
         .text_color(t.foreground)
         .hover((s) => s.bg(t.foreground + "14").border_color(t.foreground + "40"))
@@ -740,7 +742,7 @@ export default class Pane extends View {
       .child(this.tool(t, `bh-annotate-${pane}`, "pencil", page, () => act(term, "annotate", { on: !armed }), "Annotate",
         (el) => (armed ? el.bg(t.accent + "38") : el)
           // Unsent notes wait while the panel is closed: show how many.
-          .when(!armed && notes > 0, (e) => e.child(div().h(16).min_w(16).px(4).rounded(0).flex().items_center().justify_center()
+          .when(!armed && notes > 0, (e) => e.child(div().h(16).min_w(16).px(4).rounded(4).flex().items_center().justify_center()
             .bg(t.ansi3).text_color(t.background).text_size(10).font_semibold().child(String(notes))))))
       .child(this.tool(t, `bh-open-${pane}`, "external", page && /^https?:/.test(live.url), () => openOutside(live.url)))
       // The pane controls show on hover in room kept for them, so the
@@ -813,10 +815,15 @@ export default class Pane extends View {
     const clean = (p.title ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
     // A shell's title is often just its terminal address ("t4c"), which says nothing either.
     const own = clean && clean !== p.program?.name && clean !== "Claude Code" && clean !== p.terminal ? clean : "";
-    const name = viewer ? "Browser" : devtools ? "DevTools" : chatMode && !agent ? "Chat" : own || folder(p.cwd).split(/[\\/]/).filter(Boolean).pop() || p.program?.name || "shell";
+    // A tab's only pane: the tab already says what it works on, so the header names the program.
+    const lone = this.alone(self) && p.program?.agent ? p.program.name : "";
+    const name = viewer ? "Browser" : devtools ? "DevTools" : chatMode && !agent ? "Chat" : lone || own || folder(p.cwd).split(/[\\/]/).filter(Boolean).pop() || p.program?.name || "shell";
     const pic = viewer ? svg(`${BROWSER}/globe.svg`).size(14).flex_none().text_color(t.dim)
       : devtools ? svg("mods/omarchy-pane/devtools.svg").size(14).flex_none().text_color(t.dim) : icon(p.program, 14, t.dim);
-    const where = page ? pageShown(page.url) : devtools ? "" : folder(p.cwd) !== name ? folder(p.cwd) : "";
+    // The folder shows once the pane has left the one its space is named after.
+    const spaceName = spaces().find((s) => s.tabs.some((tab) => tab.id === self.tab))?.name;
+    const atHome = [folder(p.cwd), (p.cwd ?? "").split(/[\\/]/).filter(Boolean).pop()].includes(spaceName);
+    const where = page ? pageShown(page.url) : devtools || atHome ? "" : folder(p.cwd) !== name ? folder(p.cwd) : "";
     const st = p.status;
     const pane = self.pane;
     const canSwitch = chatInstalled && (chatMode ? Boolean(agent) : chatty(self));
@@ -828,7 +835,7 @@ export default class Pane extends View {
       .px(10)
       .gap(8)
       .items_center()
-      .bg(t.background)
+      .bg(self.focused ? t.surface : t.chrome)
       .rounded_t(headRadius())
       .border_b(1)
       .border_color(t.border)
@@ -836,11 +843,12 @@ export default class Pane extends View {
       .on_hover((hovered, cx) => { this.hovered = hovered; if (!hovered) this.ending = false; cx.notify(); })
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), (el) => el.child(pic))
-      .child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name))
-      .child(div().flex_1().truncate().text_color(t.dim).child(where))
+      .child(div().id(`ph-name-${pane}`).flex_none().truncate().max_w(260).font_medium().text_color(self.focused ? t.foreground : t.muted)
+        .when(Boolean(own || p.cwd), (el) => el.tooltip([own, p.cwd].filter(Boolean).join("\n"))).child(name))
+      .child(div().flex_1().truncate().text_color(t.muted).child(where))
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
-      .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(0).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
-      .when(st === "done", el => el.child(div().size(7).flex_none().rounded(0).bg(t.done)))
+      .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(4).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
+      .when(st === "done", el => el.child(div().size(8).flex_none().rounded(4).bg(t.done)))
       // Ending a chat's agent asks first, in place of the hover buttons.
       .when(asking, el => el
         .child(div().flex_none().whitespace_nowrap().text_color(t.foreground).child(`End ${prog}?`))

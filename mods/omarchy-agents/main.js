@@ -160,7 +160,7 @@ export default class Agents extends View {
         .h(26)
         .px(8)
         .gap(9)
-        .rounded(0)
+        .rounded(6)
         .items_center()
         .text_color(t.foreground)
         .hover((el) => el.bg(t.foreground + "14"))
@@ -196,9 +196,9 @@ export default class Agents extends View {
     const on = k.address === shown;
     return h_flex()
       .id(`sub-${k.address}`)
-      .pl(39)
+      .pl(24)
       .pr(8)
-      .rounded(0)
+      .rounded(6)
       .h(24)
       .flex_none()
       .gap(0)
@@ -232,7 +232,7 @@ export default class Agents extends View {
       .flex_none()
       .ml(4)
       .p(2)
-      .rounded(0)
+      .rounded(6)
       .text_color(armed ? t.blocked : t.dim)
       .when(armed, (el) => el.bg(t.blocked + "26"))
       .cursor_pointer()
@@ -257,12 +257,12 @@ export default class Agents extends View {
   // compact: a ! for blocked where a header already says "Needs you".
   status(t, a, compact = false) {
     const color = t[a.status] ?? t.dim;
-    if (a.status === "working") return div().size(7).mx(3).flex_none().rounded(0).bg(t.working).loop("opacity", { from: 0.35, to: 1, period: 1200 });
-    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(0).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
-    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(0).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
-    // Idle: a hollow square; done: a filled one.
-    if (a.status === "idle") return div().size(7).mx(3).flex_none().rounded(0).border(1).border_color(t.idle ?? t.dim);
-    return div().size(7).mx(3).flex_none().rounded(0).bg(a.status === "done" ? color : t.dim + "00");
+    if (a.status === "working") return div().size(8).mx(3).flex_none().rounded(4).bg(t.working).loop("opacity", { from: 0.35, to: 1, period: 1200 });
+    if (a.status === "blocked" && compact) return div().size(16).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
+    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(4).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
+    // Idle: a hollow dot; done: a filled one.
+    if (a.status === "idle") return div().size(8).mx(3).flex_none().rounded(4).border(1).border_color(t.idle ?? t.muted);
+    return div().size(8).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
   }
 
   render(cx) {
@@ -312,7 +312,7 @@ export default class Agents extends View {
         .gap(3)
         .flex()
         .items_center()
-        .rounded(0)
+        .rounded(6)
         .text_size(11)
         .text_color(open ? t.dim : (t[top] ?? t.dim))
         .cursor_pointer()
@@ -376,7 +376,7 @@ export default class Agents extends View {
           .flex()
           .items_center()
           .justify_center()
-          .rounded(0)
+          .rounded(6)
           .border(1)
           .text_size(11)
           .font_bold()
@@ -394,7 +394,7 @@ export default class Agents extends View {
         .id(`pin-${a.address}`)
         .flex_none()
         .p(2)
-        .rounded(0)
+        .rounded(6)
         .text_color(t.dim)
         .cursor_pointer()
         .hover((s) => s.bg(t.foreground + "14").text_color(t.foreground))
@@ -416,20 +416,30 @@ export default class Agents extends View {
       const also = full ? more ?? (a.space_name !== where ? a.space_name : null) : more ? where : null;
       // Two cut-off halves ("flexspring-wizar… · …") read as broken: the second shows only when both fit whole.
       const fitsMore = Boolean(also) && also !== name && (name?.length ?? 0) + also.length + 3 <= room();
+      // An agent at work, waiting on you, just done or in focus gets a second line, so its task is never cut away.
+      // rankOf counts its sub-agents and a Done that was just read; an idle agent stays one line.
+      const needsYou = a.status === "blocked";
+      const kidsNeed = subs.filter((s) => kidStatus(s.t, this.listed) === "blocked").length;
+      const task = more ?? where;
+      const under = more && more !== where ? where : full && a.space_name !== where ? a.space_name : null;
+      const tall = (rankOf(a) > RANK.idle || a.focused) && Boolean(under || machine || kidsNeed || needsYou);
+      const stripe = needsYou ? t.blocked : a.focused ? t.accent : null;
       return h_flex()
         .id(`ag-${a.address}`)
         .relative()
         .px(squeezed ? 6 : 8)
-        .h(26)
+        .h(tall ? 44 : 26)
         .flex_none()
-        .rounded(0)
+        .rounded(6)
         .border(1)
-        .border_color(t.foreground + "00")
+        .border_color(needsYou ? t.blocked + "55" : t.foreground + "00")
         .items_center()
         .gap(squeezed ? 5 : 8)
-        .when(a.focused, (el) => el.bg(t.foreground + "2e").child(div().absolute().left(-1).top(-1).bottom(-1).w(2).bg(t.accent)))
+        .when(a.focused, (el) => el.bg(t.foreground + "2e"))
+        .when(needsYou && !a.focused, (el) => el.bg(t.blocked + "1f"))
+        .when(Boolean(stripe), (el) => el.child(div().absolute().left(1).top(6).bottom(6).w(3).rounded(2).bg(stripe)))
         .cursor_pointer()
-        .when(!a.focused, (el) => el.hover((s) => s.bg(t.foreground + "14").border_color(t.foreground + "40")))
+        .when(!a.focused && !needsYou, (el) => el.hover((s) => s.bg(t.foreground + "14").border_color(t.foreground + "40")))
         .on_hover((on, cx) => {
           if (on) this.hovered = a.address;
           else if (this.hovered === a.address) this.hovered = null;
@@ -442,14 +452,23 @@ export default class Agents extends View {
             this.folded.has(a.address) ? this.folded.delete(a.address) : this.folded.add(a.address);
             cx.notify();
           })).child(pic)))
-        .child(h_flex().flex_1().min_w(0).gap(5).items_center()
+        .when(tall, el => el.child(v_flex().flex_1().min_w(0).gap(1)
+          .child(h_flex().min_w(0).gap(6).items_center()
+            .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child(task))
+            .when(Boolean(when) && !squeezed, el => el.child(div().flex_none().text_size(11).text_color(t.muted).child(duration(now - when)))))
+          .child(h_flex().min_w(0).h(18).gap(6).items_center().text_size(11.5).text_color(t.muted)
+            .child(div().flex_1().min_w(0).truncate().child(under ?? ""))
+            .when(Boolean(machine), el => el.child(div().flex_none().text_size(10.5).child(machine)))
+            .when(kidsNeed > 0 && !needsYou, el => el.child(div().flex_none().font_semibold().text_color(t.blocked).child(`${kidsNeed} sub needs you`)))
+            .when(needsYou, el => el.child(this.status(t, a))))))
+        .when(!tall, el => el.child(h_flex().flex_1().min_w(0).gap(5).items_center()
           .child(div().min_w(0).truncate().text_color(idle ? t.muted : t.foreground).child(name))
-          .when(fitsMore, el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${also}`))))
-        .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
+          .when(fitsMore, el => el.child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(`\u00b7 ${also}`))))
+          .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.muted).child(machine))))
         .when(subs.length > 0, el => el.child(fold(a, subs)))
         .when(this.hovered === a.address, el => el.child(pin))
-        .when(Boolean(when) && !squeezed, el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
-        .child(this.status(t, a, byPriority && !isPinned))
+        .when(!tall && Boolean(when) && !squeezed, el => el.child(div().flex_none().text_size(11).text_color(t.muted).child(duration(now - when))))
+        .when(!(tall && needsYou), el => el.child(this.status(t, a, byPriority && !isPinned)))
         .when(this.hovered === a.address || this.arming === a.address, el => el.child(this.closer(t, a.address, a.status)));
     };
 
@@ -482,8 +501,8 @@ export default class Agents extends View {
           open ? this.folded.add(g.id) : this.folded.delete(g.id);
           cx.notify();
         })
-        .child(div().truncate().text_color(t[g.status] ?? t.dim).child((g.label ?? "").toLowerCase()))
-        .when(byPriority || !open, (el) => el.child(div().text_color(t.dim).child(String(g.members.length))))
+        .child(div().truncate().font_medium().text_color(t[g.status] ?? t.muted).child((g.label ?? "").toLowerCase()))
+        .when(byPriority || !open, (el) => el.child(div().text_color(t.muted).child(String(g.members.length))))
         .child(div().flex_1())
         .when(!open, (el) => el
           .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
@@ -514,7 +533,7 @@ export default class Agents extends View {
                 .id("ag-sort")
                 .text_size(11)
                 .p(3)
-                .rounded(0)
+                .rounded(6)
                 .text_color(t.dim)
                 .hover((s) => s.bg(t.foreground + "14").text_color(t.foreground))
                 .on_click(() => openOverlay({ mod: "omarchy-agents", kind: "popup", width: 200, height: 140, props: { sortMenu: true } }))

@@ -260,9 +260,7 @@ export default class Tabs extends View {
       if (this.room[key] !== size.width) { this.room[key] = size.width; cx.notify(); }
     };
     const stop = (_e, cx) => cx.stop_propagation();
-    const f = t.foreground, idle = f + "0a", hov = f + "14", sel = f + "2e";
-    // The strip's block may be rounded in the layout: its end cells follow, inside its border.
-    const strip = find(layout(), "tabs"), inner = Math.max(0, (strip?.radius ?? 0) - (strip?.border?.width ?? 0));
+    const f = t.foreground, hov = f + "14", sel = f + "2e";
     const item = (c, i) => {
       const tabPanes = allPanes.filter(p => p.tab === c.id);
       const lead = tabPanes.find(p => p.program?.agent && p.status === c.status) ?? tabPanes.find(p => p.program?.agent) ?? tabPanes[0];
@@ -289,14 +287,11 @@ export default class Tabs extends View {
       // A narrow tab gives the icons' room to the name; the tooltip still names the agent.
       const icons = (c.active ? tabA : tabW) < TAB_ICONS ? [] : (multi ? programs.slice(0, 3) : [program]).filter(p => p?.icon);
       // The status word lives in the tooltip; the tab keeps only its dot or spinner.
-      return h_flex().id(`tab-${c.id}`).w(c.active ? tabA : tabW).h_full().px(8).gap(6).rounded(0).when(i === 0, el => el.rounded_l(inner)).items_center().flex_none().text_size(12)
+      // A cell of the measured width holds a pill, so the pills keep a gap without changing the sums in sizing.js.
+      return h_flex().id(`tab-${c.id}`).w(c.active ? tabA : tabW).h_full().px(2).items_center().flex_none()
         .tooltip([name, detail].filter(Boolean).join("\n"))
         // The close button shows on the active tab and on the one under the pointer.
         .on_hover((over, cx) => { if (over) this.overTab = c.id; else if (this.overTab === c.id) this.overTab = null; cx.notify(); })
-        // Matches the pane's focus frame.
-        .when(c.active, el => el.border_2().border_color(t.accent)).when(!c.active, el => el.border_r(1).border_color(t.border))
-        .bg(c.active ? t.background : idle).text_color(c.active ? t.foreground : t.muted)
-        .hover(s => s.bg(c.active ? t.background : hov))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
         .on_mouse_up("left", () => {
           const from = this.pressed; this.pressed = null;
@@ -304,11 +299,16 @@ export default class Tabs extends View {
           else run("tab.select", { id: c.id });
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: space.id } } }); })
-        .when(icons.length > 0, el => el.child(h_flex().flex_none().gap(6).children(icons.map(p => p.tint ? svg(p.icon).size(14).text_color(t.muted) : image(p.icon).size(14)))))
-        .child(div().flex_1().min_w(0).truncate().child(c.zoomed ? `${name} Z` : name))
-        .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
-        .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(0).bg(t[c.status])))
-        .when(c.active || this.overTab === c.id, el => el.child(div().id(`close-${c.id}`).flex_none().p(2).rounded(0).text_color(t.dim).hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(14))));
+        .child(h_flex().id(`tab-pill-${c.id}`).relative().flex_1().min_w(0).h(28).px(8).gap(6).rounded(6).items_center().text_size(12)
+          .bg(c.active ? sel : f + "00").text_color(c.active ? t.foreground : t.muted).when(c.active, el => el.font_medium())
+          .hover(s => s.bg(c.active ? sel : hov))
+          // A line, so the shown tab isn't mistaken for the focused pane's frame below it.
+          .when(c.active, el => el.child(div().absolute().left(8).right(8).bottom(0).h(2).rounded(1).bg(t.accent)))
+          .when(icons.length > 0, el => el.child(h_flex().flex_none().gap(6).children(icons.map(p => p.tint ? svg(p.icon).size(14).text_color(t.muted) : image(p.icon).size(14)))))
+          .child(div().flex_1().min_w(0).truncate().child(c.zoomed ? `${name} Z` : name))
+          .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
+          .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(8).flex_none().rounded(4).bg(t[c.status])))
+          .when(c.active || this.overTab === c.id, el => el.child(div().id(`close-${c.id}`).flex_none().p(2).rounded(4).text_color(t.muted).hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(14)))));
     };
     const root = layout();
     const panel = find(root, "panel"), body = find(root, "panel-body");
@@ -323,11 +323,10 @@ export default class Tabs extends View {
       : [];
     this.syncPanel(space, panel, body, enabled);
     const panelButton = (id, label, icon) => {
-      const on = panel && !panel.hidden && body?.active === id, last = id === enabled[enabled.length - 1];
-      // Full-height cells like the tabs, so the strip has one rhythm and no odd gaps.
-      return h_flex().id(`panel-${id}`).h_full().px(12).gap(6).flex_none().items_center().rounded(0).when(last, el => el.rounded_r(inner)).border_l(1).border_color(t.border)
-        .text_size(12).bg(on ? sel : idle).text_color(on ? t.foreground : t.muted)
-        .hover(s => s.bg(on ? sel : hov)).on_mouse_down("left", stop)
+      const on = panel && !panel.hidden && body?.active === id;
+      return h_flex().id(`panel-${id}`).h(26).px(9).gap(5).flex_none().items_center().rounded(6).border(1).border_color(on ? t.accent + "66" : f + "00")
+        .text_size(12).bg(on ? t.accent + "22" : f + "00").text_color(on ? t.foreground : t.muted)
+        .hover(s => s.bg(on ? t.accent + "33" : hov).text_color(t.foreground)).on_mouse_down("left", stop)
         .on_click(() => {
           if (on) run("layout.hide", { id: "panel" });
           else {
@@ -340,19 +339,20 @@ export default class Tabs extends View {
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
       .child(h_flex().id("tab-scroll").max_w(Math.max(0, shown.length - 1) * tabW + (shown.length ? tabA : 0)).flex_shrink(1).min_w(0).h_full().items_center().gap(0).overflow_x_scrollbar().children(shown.map(item)))
-      .child(div().id("tab-new").h_full().w(NEW_TAB).flex_none().flex().items_center().justify_center().rounded(0).border_r(1).border_color(t.border).bg(idle).text_color(t.dim)
-        .hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop)
-        // Shepherdr's + menu where it is installed, else Herdr's own (a machine without Shepherdr).
-        .on_click(() => openOverlay(this.mods?.["new-menu-tasks"]
-          ? { mod: "new-menu-tasks", kind: "popup", width: 250, height: 543 }
-          : { mod: "new-menu", kind: "popup", width: 250, height: 512 })).child("+"))
+      .child(div().h_full().w(NEW_TAB).flex_none().flex().items_center().justify_center()
+        .child(div().id("tab-new").size(28).flex().items_center().justify_center().rounded(6).text_color(t.muted)
+          .hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop)
+          // Shepherdr's + menu where it is installed, else Herdr's own (a machine without Shepherdr).
+          .on_click(() => openOverlay(this.mods?.["new-menu-tasks"]
+            ? { mod: "new-menu-tasks", kind: "popup", width: 250, height: 543 }
+            : { mod: "new-menu", kind: "popup", width: 250, height: 512 })).child("+")))
       .child(div().flex_1())
-      .child(h_flex().id("tab-panels").h_full().gap(0).items_center().flex_none().on_size_change(measure("panels"))
+      .child(h_flex().id("tab-panels").h_full().gap(3).pr(5).items_center().flex_none().on_size_change(measure("panels"))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Git", "mods/changes/changes.svg")))
       .when(enabled.includes("herdr-sim"), el => el.child(panelButton("herdr-sim", "Simulator", "mods/herdr-sim/icons/smartphone.svg")))
-      .when(BROWSER_BUTTON && Boolean(this.mods?.["omarchy-browser"]), el => el.child(h_flex().id("open-browser").h_full().px(12).gap(6).flex_none().items_center().rounded(0).border_l(1).border_color(t.border)
-        .text_size(12).bg(idle).text_color(t.muted).hover(s => s.bg(hov)).on_mouse_down("left", stop)
+      .when(BROWSER_BUTTON && Boolean(this.mods?.["omarchy-browser"]), el => el.child(h_flex().id("open-browser").h(26).px(9).gap(5).flex_none().items_center().rounded(6)
+        .text_size(12).text_color(t.muted).hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop)
         .on_click(() => run("omarchy-browser.open")).child(svg("mods/omarchy-tabs/icons/globe.svg").size(14)).child("Browser")))
       .when(enabled.includes("tasks"), el => el.child(panelButton("tasks", "Tasks", "mods/tasks/tasks.svg")))
       .when(enabled.includes("artifacts"), el => el.child(panelButton("artifacts", "Artifacts", "mods/artifacts/artifacts.svg"))));

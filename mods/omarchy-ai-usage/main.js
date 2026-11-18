@@ -3,7 +3,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { agents, exec, focused, home, knownAgents, panes, shared, setShared, props, openOverlay, settings, theme } from "herdr";
 
 import { PROVIDERS, sourcesFor, alwaysSources, fetchUsage } from "./providers.js";
-import { clock, pace, resets, resetsShort, resetsLeft, DAY } from "./time.js";
+import { clock, pace, resets, resetsShort, resetsLeft } from "./time.js";
 
 const MOD = "omarchy-ai-usage";
 const keyOf = id => `${MOD}.${id}`;
@@ -11,7 +11,6 @@ const SHOWN = keyOf("shown");
 const EVERY = 5 * 60e3;
 // One missed cycle plus slack, so a slow fetch doesn't flash the bar grey.
 const STALE = 12 * 60e3;
-const AMBER = "#ffb347", RED = "#ff5d6c";
 const POPUP_W = 320, GAP = 6;
 
 // Sources with a request in flight. Module scope is shared by every copy (the bar and its popup),
@@ -149,39 +148,36 @@ export default class AiUsage extends View {
     return this.clickable(this.shell(h_flex())).pl(12).pr(8).gap(12).text_size(11.8).child(v_flex().gap(2).children(rows));
   }
 
-  // 330px: one provider gets label, bar and two windows; two drop the label; more keep one window each.
+  // Each provider in a capsule: its first limit as a bar and percent, its second as a number. The popup has the rest.
   compact() {
     const t = theme(), list = shownList(), idle = shared(SHOWN)?.idle;
-    const n = list.length;
-    // Icon, then each window (5h, 7d) as its label, a bar and the percent. The popup has the rest.
-    const barW = n === 1 ? 70 : n === 2 ? 48 : 32;
     const segs = list.map(s => {
       const u = shared(keyOf(s.id));
       const stale = idle || isStale(u);
-      const [first, second] = u?.windows ?? [];
-      // The plan-wide weekly window also says when it resets (not a model-scoped one).
-      const weekly = [first, second].find(w => w && w.span >= 7 * DAY && !w.monthly && !w.scoped);
-      const win = (w) => {
-        const c = color(w, stale, t, s);
-        return h_flex().gap(5).items_center().flex_none()
-          .child(div().whitespace_nowrap().text_color(t.dim).child(w.short))
-          .child(div().relative().w(barW).h(6).bg(t.border).child(div().absolute().left(0).top(0).h_full().w(`${clamp(w.used)}%`).bg(c)))
-          .child(div().whitespace_nowrap().text_color(stale ? t.dim : w.used >= 80 ? c : t.muted).child(`${w.used}%`))
-          .when(w === weekly && Boolean(resetsLeft(w)), el => el.child(div().whitespace_nowrap().text_color(t.dim).child(`↻ ${resetsLeft(w)}`)));
-      };
-      return h_flex().gap(6).items_center().flex_none()
-        .child(this.icon(s, 12, stale))
+      const windows = u?.windows ?? [];
+      const [first, second] = windows;
+      const number = w => stale ? t.dim : w.used >= 80 ? color(w, stale, t, s) : t.foreground;
+      // The reset says when relief comes, so it shows once a limit is close.
+      const close = [first, second].find(w => w && w.used >= 75 && resetsLeft(w));
+      return h_flex().h(22).px(8).gap(6).items_center().flex_none().rounded(5).bg(t.foreground + "0a")
+        .child(this.icon(s, 13, stale))
         // The profile's name, so a work and a personal Claude tell apart.
         .when(s.provider === "claude", el => el.child(div().whitespace_nowrap().text_color(stale ? t.dim : t.foreground).child(s.label)))
-        .when(Boolean(s.note) || !first, el => el.child(div().whitespace_nowrap().text_color(t.dim).child(s.note ?? (u?.error ? "no data" : u?.fetched ? "no limits" : "…"))))
-        .when(Boolean(first), el => el.child(win(first)))
-        .when(Boolean(second), el => el.child(win(second)));
+        .when(Boolean(s.note) || !first, el => el.child(div().whitespace_nowrap().text_color(t.muted).child(s.note ?? (u?.error ? "no data" : u?.fetched ? "no limits" : "…"))))
+        .when(Boolean(first), el => el
+          .child(div().whitespace_nowrap().text_color(t.muted).child(first.short))
+          .child(div().relative().w(42).h(5).rounded(3).bg(t.border).child(div().absolute().left(0).top(0).h_full().rounded(3).w(`${clamp(first.used)}%`).bg(color(first, stale, t, s))))
+          .child(div().whitespace_nowrap().font_semibold().text_color(number(first)).child(`${first.used}%`)))
+        .when(Boolean(second), el => el
+          .child(div().whitespace_nowrap().text_color(t.muted).child(second.short))
+          .child(div().whitespace_nowrap().font_semibold().text_color(number(second)).child(`${second.used}%`)))
+        // A limit the capsule has no room for still warns.
+        .when(!stale && windows.slice(2).some(w => w.used >= 80), el => el.child(div().font_bold().text_color(t.working).child("!")))
+        .when(Boolean(close), el => el.child(div().whitespace_nowrap().text_color(t.muted).child(`↻ ${resetsLeft(close)}`)));
     });
-    // The same │ the bar puts between space and folder, only between segments.
-    const sep = i => div().id(`usage-sep-${i}`).flex_none().text_color(t.border).child("│");
     // Only the meters open the popup; the empty rest of the block drags the window.
     return this.shell(h_flex()).justify_center().px(10).child(this.clickable(h_flex().id("usage").h_full().items_center()
-      .gap(14).text_size(11).children(segs.flatMap((seg, i) => (i ? [sep(i), seg] : [seg])))));
+      .gap(8).text_size(11.5).children(segs)));
   }
 
   details() {
@@ -192,7 +188,7 @@ export default class AiUsage extends View {
       const footer = s.note ?? (!u?.fetched ? (u?.error ?? "not fetched yet")
         : u.error ? `fetch failed: ${u.error} · data from ${clock(Date.parse(u.fetched))}`
         : `updated ${clock(Date.parse(u.fetched))}`);
-      return v_flex().gap(10).p(10).rounded(0).border(1).border_color(stale ? t.border : t.input)
+      return v_flex().gap(10).p(10).rounded(6).border(1).border_color(stale ? t.border : t.input)
         .child(h_flex().gap(6).items_center().min_w(0)
           .child(this.icon(s, 14, stale))
           .child(div().flex_none().text_size(12.5).font_bold().text_color(t.foreground).child(title(s)))
@@ -206,10 +202,10 @@ export default class AiUsage extends View {
         .child(div().text_size(11.5).text_color(u?.error ? t.blocked : t.dim).child(footer));
     };
     return v_flex().w_full().h(props().height ?? 0).when(!props().below, el => el.justify_end()).child(v_flex().w_full().p(14).gap(14).text_size(12).text_color(t.muted)
-      .bg(t.popover).border(1).border_color(t.border).rounded(0)
+      .bg(t.popover).border(1).border_color(t.border).rounded(6)
       .child(h_flex().justify_between().items_center()
         .child(div().text_size(13).font_semibold().text_color(t.foreground).child(idle ? "AI usage (last seen)" : "AI usage"))
-        .child(div().id("refresh").px(6).py(2).rounded(0).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
+        .child(div().id("refresh").px(6).py(2).rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click((_e, cx) => cx.spawn(async () => refreshAll(true))).child("Refresh")))
       .when(!list.length, el => el.child(div().text_color(t.dim).child("No agent in view")))
       .children(list.map(section)));
@@ -223,18 +219,18 @@ const title = s => {
   return s.provider && s.label.toLowerCase() !== name.toLowerCase() ? `${name} · ${s.label}` : name;
 };
 
-// Each provider's own brand color (Claude clay, Codex blue, Copilot purple) until it nears its limit.
-function color(w, stale, t, s) {
+// The theme's colors, so a limit near its end reads in light themes too.
+function color(w, stale, t) {
   if (stale) return t.dim;
-  if (w.used >= 95) return RED;
-  if (w.used >= 80) return AMBER;
-  return PROVIDERS[s?.provider]?.color ?? t.accent;
+  if (w.used >= 95) return t.blocked;
+  if (w.used >= 80) return t.working;
+  return t.accent;
 }
 
 // The elapsed share of the window is drawn as a ghost fill: lit past it means running ahead of pace.
 function meter(w, stale, t, height, s) {
   const ghost = stale ? null : pace(w);
-  return div().relative().w_full().h(height).rounded(0).bg(t.border)
-    .when(ghost !== null, el => el.child(div().absolute().left(0).top(0).h_full().w(`${ghost * 100}%`).rounded(0).bg(t.dim).opacity(0.35)))
-    .child(div().absolute().left(0).top(0).h_full().w(`${clamp(w.used)}%`).rounded(0).bg(color(w, stale, t, s)));
+  return div().relative().w_full().h(height).rounded(6).bg(t.border)
+    .when(ghost !== null, el => el.child(div().absolute().left(0).top(0).h_full().w(`${ghost * 100}%`).rounded(6).bg(t.dim).opacity(0.35)))
+    .child(div().absolute().left(0).top(0).h_full().w(`${clamp(w.used)}%`).rounded(6).bg(color(w, stale, t, s)));
 }
