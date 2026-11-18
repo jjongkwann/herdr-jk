@@ -36,6 +36,7 @@ These upstream features were merged by the recent tasks and fitted to the change
 - **Compact footer.** Settings, Keybindings, Mods and Add machine sit in a 2×2 grid with short labels (full names in tooltips); the folded rail keeps a stack of four.
 - **Running-tab keys.** `super-shift-left` and `super-shift-right` jump to the previous or next tab with a working or blocked agent, or to the plain previous or next tab when none has one.
 - **Spaces stay where you put them.** Drag a row to reorder; the sidebar never moves a space for its agents' activity (the agents list shows that). A worktree's space sits under its main checkout's.
+- **The first agent is the Assistant.** The first Claude Code or Codex opened in a space with no Assistant, from the + menu or typed in a terminal, becomes that space's Assistant. An agent that already has a conversation, a resumed one, or a second agent stays as it is. Shepherdr's `coordinator.auto` set to false turns this off.
 - **Resizable sidebar lists.** Drag the gap between spaces and agents to give one more room; each stays at least 90px tall.
 - **Agent × at the row's end.** A hovered agent row shows its × at the right end, after the status dot, as a space row does.
 - **AI usage fixes.** Claude profile names from `settings.json`'s `claude_labels` are found again, the bar keeps redrawing while a quota request is slow, and each provider has at most one request in flight.

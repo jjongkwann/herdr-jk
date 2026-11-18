@@ -28,6 +28,7 @@ Each folder under `mods/` is a self-contained Herdr mod. `main.js` is its entry 
 | Tab strip, its panel buttons, running-tab and pane back/forward keys | `mods/omarchy-tabs/main.js` |
 | Tab widths: compact tabs that shrink before the strip scrolls | `mods/omarchy-tabs/sizing.js` |
 | Next or previous tab with a running agent | `mods/omarchy-tabs/jump.js` |
+| The first agent opened in a space becomes its Assistant | `mods/omarchy-tabs/first-agent.js` |
 | Pane back / forward history | `mods/omarchy-tabs/history.js` |
 | Reopen closed tab: snapshot and reopen key | `mods/omarchy-tabs/main.js` |
 | Reopen: agent resume commands | `mods/omarchy-tabs/reopen.js` |
