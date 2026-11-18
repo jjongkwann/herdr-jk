@@ -1,0 +1,144 @@
+Subject: Coordinator: start its helper scripts with sh, because Windows' bash is WSL's
+Owner: shepherdr
+Versions: >=3.1.41
+
+diff --git a/lib/coordinator.js b/lib/coordinator.js
+index 254be27..be6d577 100644
+--- a/lib/coordinator.js
++++ b/lib/coordinator.js
+@@ -96,7 +96,8 @@ export function entryFor(k, known) {
+ // script runs in a job of its own (set -m) under nohup, so it outlives the menu all the same.
+ export const DETACH = 'if command -v setsid >/dev/null 2>&1; then setsid -f bash "$0" "$@"; else set -m; nohup bash "$0" "$@" & fi >/dev/null 2>&1 </dev/null';
+ function script(name, args) {
+-  return exec("bash", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
++  // sh, not bash: on Windows `bash` is WSL's, where these scripts never run.
++  return exec("sh", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
+ }
+ 
+ // Where a space's coordinator works: its focused (else first) terminal's folder.
+diff --git a/mods/coordinator/coordinator.js b/mods/coordinator/coordinator.js
+index 254be27..be6d577 100644
+--- a/mods/coordinator/coordinator.js
++++ b/mods/coordinator/coordinator.js
+@@ -96,7 +96,8 @@ export function entryFor(k, known) {
+ // script runs in a job of its own (set -m) under nohup, so it outlives the menu all the same.
+ export const DETACH = 'if command -v setsid >/dev/null 2>&1; then setsid -f bash "$0" "$@"; else set -m; nohup bash "$0" "$@" & fi >/dev/null 2>&1 </dev/null';
+ function script(name, args) {
+-  return exec("bash", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
++  // sh, not bash: on Windows `bash` is WSL's, where these scripts never run.
++  return exec("sh", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
+ }
+ 
+ // Where a space's coordinator works: its focused (else first) terminal's folder.
+diff --git a/mods/menu-tasks/coordinator.js b/mods/menu-tasks/coordinator.js
+index 254be27..be6d577 100644
+--- a/mods/menu-tasks/coordinator.js
++++ b/mods/menu-tasks/coordinator.js
+@@ -96,7 +96,8 @@ export function entryFor(k, known) {
+ // script runs in a job of its own (set -m) under nohup, so it outlives the menu all the same.
+ export const DETACH = 'if command -v setsid >/dev/null 2>&1; then setsid -f bash "$0" "$@"; else set -m; nohup bash "$0" "$@" & fi >/dev/null 2>&1 </dev/null';
+ function script(name, args) {
+-  return exec("bash", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
++  // sh, not bash: on Windows `bash` is WSL's, where these scripts never run.
++  return exec("sh", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
+ }
+ 
+ // Where a space's coordinator works: its focused (else first) terminal's folder.
+diff --git a/mods/new-menu-tasks/coordinator.js b/mods/new-menu-tasks/coordinator.js
+index 254be27..be6d577 100644
+--- a/mods/new-menu-tasks/coordinator.js
++++ b/mods/new-menu-tasks/coordinator.js
+@@ -96,7 +96,8 @@ export function entryFor(k, known) {
+ // script runs in a job of its own (set -m) under nohup, so it outlives the menu all the same.
+ export const DETACH = 'if command -v setsid >/dev/null 2>&1; then setsid -f bash "$0" "$@"; else set -m; nohup bash "$0" "$@" & fi >/dev/null 2>&1 </dev/null';
+ function script(name, args) {
+-  return exec("bash", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
++  // sh, not bash: on Windows `bash` is WSL's, where these scripts never run.
++  return exec("sh", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
+ }
+ 
+ // Where a space's coordinator works: its focused (else first) terminal's folder.
+diff --git a/mods/newspace/coordinator.js b/mods/newspace/coordinator.js
+index 254be27..be6d577 100644
+--- a/mods/newspace/coordinator.js
++++ b/mods/newspace/coordinator.js
+@@ -96,7 +96,8 @@ export function entryFor(k, known) {
+ // script runs in a job of its own (set -m) under nohup, so it outlives the menu all the same.
+ export const DETACH = 'if command -v setsid >/dev/null 2>&1; then setsid -f bash "$0" "$@"; else set -m; nohup bash "$0" "$@" & fi >/dev/null 2>&1 </dev/null';
+ function script(name, args) {
+-  return exec("bash", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
++  // sh, not bash: on Windows `bash` is WSL's, where these scripts never run.
++  return exec("sh", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
+ }
+ 
+ // Where a space's coordinator works: its focused (else first) terminal's folder.
+diff --git a/mods/omarchy-tabs/coordinator.js b/mods/omarchy-tabs/coordinator.js
+index 254be27..be6d577 100644
+--- a/mods/omarchy-tabs/coordinator.js
++++ b/mods/omarchy-tabs/coordinator.js
+@@ -96,7 +96,8 @@ export function entryFor(k, known) {
+ // script runs in a job of its own (set -m) under nohup, so it outlives the menu all the same.
+ export const DETACH = 'if command -v setsid >/dev/null 2>&1; then setsid -f bash "$0" "$@"; else set -m; nohup bash "$0" "$@" & fi >/dev/null 2>&1 </dev/null';
+ function script(name, args) {
+-  return exec("bash", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
++  // sh, not bash: on Windows `bash` is WSL's, where these scripts never run.
++  return exec("sh", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
+ }
+ 
+ // Where a space's coordinator works: its focused (else first) terminal's folder.
+diff --git a/mods/shepherdr-settings/coordinator.js b/mods/shepherdr-settings/coordinator.js
+index 254be27..be6d577 100644
+--- a/mods/shepherdr-settings/coordinator.js
++++ b/mods/shepherdr-settings/coordinator.js
+@@ -96,7 +96,8 @@ export function entryFor(k, known) {
+ // script runs in a job of its own (set -m) under nohup, so it outlives the menu all the same.
+ export const DETACH = 'if command -v setsid >/dev/null 2>&1; then setsid -f bash "$0" "$@"; else set -m; nohup bash "$0" "$@" & fi >/dev/null 2>&1 </dev/null';
+ function script(name, args) {
+-  return exec("bash", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
++  // sh, not bash: on Windows `bash` is WSL's, where these scripts never run.
++  return exec("sh", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
+ }
+ 
+ // Where a space's coordinator works: its focused (else first) terminal's folder.
+diff --git a/mods/spaces-chat/coordinator.js b/mods/spaces-chat/coordinator.js
+index 254be27..be6d577 100644
+--- a/mods/spaces-chat/coordinator.js
++++ b/mods/spaces-chat/coordinator.js
+@@ -96,7 +96,8 @@ export function entryFor(k, known) {
+ // script runs in a job of its own (set -m) under nohup, so it outlives the menu all the same.
+ export const DETACH = 'if command -v setsid >/dev/null 2>&1; then setsid -f bash "$0" "$@"; else set -m; nohup bash "$0" "$@" & fi >/dev/null 2>&1 </dev/null';
+ function script(name, args) {
+-  return exec("bash", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
++  // sh, not bash: on Windows `bash` is WSL's, where these scripts never run.
++  return exec("sh", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
+ }
+ 
+ // Where a space's coordinator works: its focused (else first) terminal's folder.
+diff --git a/mods/tabs-tasks/coordinator.js b/mods/tabs-tasks/coordinator.js
+index 254be27..be6d577 100644
+--- a/mods/tabs-tasks/coordinator.js
++++ b/mods/tabs-tasks/coordinator.js
+@@ -96,7 +96,8 @@ export function entryFor(k, known) {
+ // script runs in a job of its own (set -m) under nohup, so it outlives the menu all the same.
+ export const DETACH = 'if command -v setsid >/dev/null 2>&1; then setsid -f bash "$0" "$@"; else set -m; nohup bash "$0" "$@" & fi >/dev/null 2>&1 </dev/null';
+ function script(name, args) {
+-  return exec("bash", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
++  // sh, not bash: on Windows `bash` is WSL's, where these scripts never run.
++  return exec("sh", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
+ }
+ 
+ // Where a space's coordinator works: its focused (else first) terminal's folder.
+diff --git a/mods/tasks/coordinator.js b/mods/tasks/coordinator.js
+index 254be27..be6d577 100644
+--- a/mods/tasks/coordinator.js
++++ b/mods/tasks/coordinator.js
+@@ -96,7 +96,8 @@ export function entryFor(k, known) {
+ // script runs in a job of its own (set -m) under nohup, so it outlives the menu all the same.
+ export const DETACH = 'if command -v setsid >/dev/null 2>&1; then setsid -f bash "$0" "$@"; else set -m; nohup bash "$0" "$@" & fi >/dev/null 2>&1 </dev/null';
+ function script(name, args) {
+-  return exec("bash", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
++  // sh, not bash: on Windows `bash` is WSL's, where these scripts never run.
++  return exec("sh", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
+ }
+ 
+ // Where a space's coordinator works: its focused (else first) terminal's folder.

@@ -96,7 +96,8 @@ export function entryFor(k, known) {
 // script runs in a job of its own (set -m) under nohup, so it outlives the menu all the same.
 export const DETACH = 'if command -v setsid >/dev/null 2>&1; then setsid -f bash "$0" "$@"; else set -m; nohup bash "$0" "$@" & fi >/dev/null 2>&1 </dev/null';
 function script(name, args) {
-  return exec("bash", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
+  // sh, not bash: on Windows `bash` is WSL's, where these scripts never run.
+  return exec("sh", ["-c", DETACH, `${appHome()}/mods/coordinator/${name}.sh`, ...args]);
 }
 
 // Where a space's coordinator works: its focused (else first) terminal's folder.
