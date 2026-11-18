@@ -1,10 +1,10 @@
 // Theme switcher, as Omarchy 4's: full screen over the desktop, each theme's
 // desktop preview, the chosen one large in the middle. ←/→ move, Enter applies, Esc closes.
-// omarchy-bar brings the theme's wallpaper.
+// A pick brings the theme's first wallpaper, as Omarchy's theme switch; super-ctrl-b still picks any.
 
 import { View, div, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { themes, settings, run, theme, props, closeOverlay, appHome, readTextFile, writeTextFile } from "herdr";
+import { themes, settings, run, theme, props, closeOverlay, appHome, readTextFile, writeTextFile, exec, layout, shared } from "herdr";
 
 const DIR = "mods/omarchy-themes/previews";
 // The themes with a preview here (Omarchy's previews/<theme>.webp).
@@ -13,6 +13,19 @@ const PREVIEWS = ["catppuccin", "catppuccin-latte", "ethereal", "everforest", "f
   "solitude", "starship", "tokyo-night", "vantablack", "white"];
 
 const list = () => themes().filter((x) => PREVIEWS.includes(x.name));
+
+// The omarchy layout's wallpaper becomes the theme's first (backgrounds/omarchy/<theme>/, in name order),
+// unless it is already one of that theme's. Set before the theme, so this write of the layout can't undo it.
+async function themeWallpaper(name) {
+  const dir = `backgrounds/omarchy/${name}`, l = layout();
+  if (shared("layout") !== "omarchy" || !l || l.background?.image?.startsWith(`${dir}/`)) return;
+  const r = await exec("ls", ["-1", `${appHome()}/${dir}`]).catch(() => null);
+  const first = r?.code === 0 ? r.stdout.split("\n").find((f) => /\.(webp|jpe?g|png)$/i.test(f)) : null;
+  if (!first) return;
+  // Through the CLI: run() refuses an argument nested deeper than 16 levels, and this layout's tree is deeper.
+  const next = { ...l, background: { ...l.background, image: `${dir}/${first}` } };
+  await exec("herdr-app", ["do", "layout.set", JSON.stringify({ layout: next })]).catch(() => null);
+}
 
 export default class OmarchyThemes extends View {
   init(_props, cx) {
@@ -29,7 +42,7 @@ export default class OmarchyThemes extends View {
   }
 
   // A light theme only shows in light mode and a dark one in dark, so the mode follows the pick,
-  // as in Omarchy. Written before closing: this overlay's tasks end with it.
+  // as in Omarchy. Written before closing, as the wallpaper: this overlay's tasks end with it.
   async pick(x) {
     if (x.light === Boolean(settings().dark)) {
       const file = `${appHome()}/settings.json`, raw = await readTextFile(file).catch(() => null);
@@ -37,6 +50,7 @@ export default class OmarchyThemes extends View {
       try { person = JSON.parse(raw ?? "{}"); } catch { /* unreadable: start from empty */ }
       await writeTextFile(file, JSON.stringify({ ...person, appearance: x.light ? "light" : "dark" }, null, 2) + "\n", raw).catch(() => null);
     }
+    await themeWallpaper(x.name);
     run("app.theme", { name: x.name });
     closeOverlay(props().overlay);
   }
