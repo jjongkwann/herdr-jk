@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assistantLabels, assistantWords, firstAgents, FRESH_MS, startsFresh, stillFresh } from '../mods/omarchy-tabs/first-agent.js';
+import { assistantLabels, assistantWords, firstAgents, FRESH_MS, isHome, startsFresh, stillFresh } from '../mods/omarchy-tabs/first-agent.js';
 
 const space = { id: 'sp1', machine: null, tabs: [{ id: 'tb1' }, { id: 'tb2' }] };
 const agent = (address, extra = {}) => ({ address, state: 'live', status: 'idle', turn: 0, program: { key: 'claude' }, labels: { 'herdr.space': 'sp1' }, ...extra });
@@ -58,6 +58,16 @@ test('the record hc gives decides last', () => {
   assert.equal(stillFresh({ ...k, turn: 1 }, now), false);
   assert.equal(stillFresh({ ...k, status: { state: 'working' } }, now), false);
   assert.equal(stillFresh({ ...k, foreground: { argv: ['claude', '--resume', 'x'] } }, now), false);
+});
+
+test('an agent opened in a home folder stays a plain agent', () => {
+  for (const home of ['/Users/me', '/Users/me/', '/home/me', '/root', 'C:\\Users\\me', 'C:/Users/me', '/c/Users/me']) assert.equal(isHome(home), true, home);
+  for (const dir of ['/Users/me/work', '/home/me/repo', '/tmp', 'C:\\Users\\me\\work', '/c/Users/me/work', '', null]) assert.equal(isHome(dir), false, String(dir));
+  const now = 1_000_000_000;
+  const k = { state: 'live', turn: 0, status: { state: 'idle' }, status_ms: now, cwd: '/Users/me', foreground: { argv: ['claude'], cwd: '/Users/me/work' } };
+  assert.equal(stillFresh(k, now), true);
+  assert.equal(stillFresh({ ...k, foreground: { argv: ['claude'], cwd: '/Users/me' } }, now), false);
+  assert.equal(stillFresh({ ...k, foreground: { argv: ['claude'] } }, now), false);
 });
 
 test("the template's header is not part of its words", () => {
