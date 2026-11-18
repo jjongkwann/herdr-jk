@@ -44,10 +44,14 @@ export function startsFresh(argv = []) {
   return !args.some((a) => /^(--resume|-r|--continue|-c|--print|-p)(=|$)/.test(a));
 }
 
-// The last word before adopting, from `hc get`'s record of the terminal.
+// A home folder on macOS, Linux or Windows (also as Git's sh writes it): no project for an Assistant to run.
+export const isHome = (path) => /^(\/Users\/[^/]+|\/home\/[^/]+|\/root|[A-Za-z]:[\\/]Users[\\/][^\\/]+|\/[a-z]\/Users\/[^/]+)[\\/]?$/.test(String(path ?? ""));
+
+// The last word before adopting, from `hc get`'s record of the terminal. The agent's own folder comes first:
+// the terminal's can be where its shell started.
 export function stillFresh(k, now = Date.now()) {
   return k?.state === "live" && !k.parent && !k.template && !k.turn && k.status?.state === "idle"
-    && now - (k.status_ms ?? 0) <= FRESH_MS && startsFresh(k.foreground?.argv ?? []);
+    && now - (k.status_ms ?? 0) <= FRESH_MS && startsFresh(k.foreground?.argv ?? []) && !isHome(k.foreground?.cwd ?? k.cwd);
 }
 
 // The assistant template's words, without its header. Empty when it has none.
