@@ -27,11 +27,10 @@ export const ZOOM_BORDER = 4;
 export async function setZoomBorder(zoomed) {
   const l = layout();
   if (!l) return;
-  const width = zoomed ? ZOOM_BORDER : 2;
-  const look = (b) => ({ ...b, width });
+  const look = (b, width) => ({ ...b, width: zoomed ? ZOOM_BORDER : width });
   const next = withNode(l, "main", (main) => {
     const pane = main.content.pane;
-    return { ...main, content: { ...main.content, pane: { ...pane, border: look(pane.border), focus: look(pane.focus) } } };
+    return { ...main, content: { ...main.content, pane: { ...pane, border: look(pane.border, 1), focus: look(pane.focus, 2) } } };
   });
   await exec("herdr-app", ["do", "layout.set", JSON.stringify({ layout: next })]);
 }
