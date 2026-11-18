@@ -1,16 +1,16 @@
 Subject: Chat on a Windows machine: the Assistant starts there (its one-off template in pieces) and its log is found under Git bash
 Owner: shepherdr
-Versions: >=3.1.34
+Versions: >=3.1.41
 
 diff --git a/core/chat-log.js b/core/chat-log.js
-index 9fcf441..e01359f 100644
+index caf9731..f227779 100644
 --- a/core/chat-log.js
 +++ b/core/chat-log.js
-@@ -12,6 +12,30 @@ import { codexQuestions } from "./asks.js";
- export const FIND = `
+@@ -15,6 +15,30 @@ export const FIND = `
  kind="$1"; pid="$2"
- kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
-+# Windows (Git's sh, no pgrep): every process under it, from a process snapshot. The agent is a child of the
+ procs() { if [ -r /proc/self/stat ]; then cat /proc/[0-9]*/stat 2>/dev/null | awk '{ p = $1; sub(/.*\\) /, ""); print p, $2 }'; else ps -axo pid=,ppid= 2>/dev/null; fi; }
+ kids() { procs | sort -n | awk -v r="$1" 'function walk(p,  c, m, j) { m = split(k[p], c, " "); for (j = 1; j <= m; j++) if (!(c[j] in s)) { s[c[j]] = 1; print c[j]; walk(c[j]) } } { k[$2] = k[$2] " " $1 } END { s[r] = 1; walk(r) }'; }
++# Windows (Git's sh: its /proc and ps see only its own programs, not claude.exe): every process under it, from a snapshot. The agent is a child of the
 +# Git bash that ran its command there (Windows has no exec), so the terminal's own program is that bash.
 +[ -n "\${WINDIR:-}" ] && kids() { python3 -c '
 +import ctypes as c, ctypes.wintypes as w, sys
@@ -38,14 +38,14 @@ index 9fcf441..e01359f 100644
    if [ "$kind" = claude ]; then
      j="$HOME/.claude/sessions/$p.json"
 diff --git a/mods/chat/core/chat-log.js b/mods/chat/core/chat-log.js
-index 9fcf441..e01359f 100644
+index caf9731..f227779 100644
 --- a/mods/chat/core/chat-log.js
 +++ b/mods/chat/core/chat-log.js
-@@ -12,6 +12,30 @@ import { codexQuestions } from "./asks.js";
- export const FIND = `
+@@ -15,6 +15,30 @@ export const FIND = `
  kind="$1"; pid="$2"
- kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
-+# Windows (Git's sh, no pgrep): every process under it, from a process snapshot. The agent is a child of the
+ procs() { if [ -r /proc/self/stat ]; then cat /proc/[0-9]*/stat 2>/dev/null | awk '{ p = $1; sub(/.*\\) /, ""); print p, $2 }'; else ps -axo pid=,ppid= 2>/dev/null; fi; }
+ kids() { procs | sort -n | awk -v r="$1" 'function walk(p,  c, m, j) { m = split(k[p], c, " "); for (j = 1; j <= m; j++) if (!(c[j] in s)) { s[c[j]] = 1; print c[j]; walk(c[j]) } } { k[$2] = k[$2] " " $1 } END { s[r] = 1; walk(r) }'; }
++# Windows (Git's sh: its /proc and ps see only its own programs, not claude.exe): every process under it, from a snapshot. The agent is a child of the
 +# Git bash that ran its command there (Windows has no exec), so the terminal's own program is that bash.
 +[ -n "\${WINDIR:-}" ] && kids() { python3 -c '
 +import ctypes as c, ctypes.wintypes as w, sys
@@ -73,10 +73,10 @@ index 9fcf441..e01359f 100644
    if [ "$kind" = claude ]; then
      j="$HOME/.claude/sessions/$p.json"
 diff --git a/mods/chat/main.js b/mods/chat/main.js
-index 0913d25..94b2909 100644
+index be1bf5e..98dfeb8 100644
 --- a/mods/chat/main.js
 +++ b/mods/chat/main.js
-@@ -1742,7 +1742,13 @@ export default class Chat extends View {
+@@ -1747,7 +1747,13 @@ export default class Chat extends View {
            words = body.trim();
            oneOff = `herdr-${template}-${Date.now().toString(36)}`;
            const file = `---\nname: ${oneOff}\ndescription: A one-off ${template} start with chosen settings (mods/chat), removed after use.\ncommand: ${cleanCommand(cmd)}\n---\n${body}`;

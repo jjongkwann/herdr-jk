@@ -1,6 +1,6 @@
 Subject: Tasks: workers get no task browser (agent-browser, Chrome for Testing); their brief points them to Firefox through firefox-agent
 Owner: shepherdr
-Versions: >=3.1.34
+Versions: >=3.1.41
 
 diff --git a/mods/tasks/bin/herdr_task/browsers.py b/mods/tasks/bin/herdr_task/browsers.py
 index 7b03706..6e771d0 100644
@@ -26,7 +26,7 @@ index 7b03706..6e771d0 100644
  
  def idle_ms():
 diff --git a/mods/tasks/bin/herdr_task/launch.py b/mods/tasks/bin/herdr_task/launch.py
-index bde6756..08e8f9f 100644
+index 328bd24..34a960e 100644
 --- a/mods/tasks/bin/herdr_task/launch.py
 +++ b/mods/tasks/bin/herdr_task/launch.py
 @@ -65,10 +65,7 @@ def own_rules(path):
@@ -41,7 +41,7 @@ index bde6756..08e8f9f 100644
      return rules
  
  
-@@ -174,9 +171,6 @@ def own_command(path, text, sandboxed=False):
+@@ -220,9 +217,6 @@ def own_command(path, text, sandboxed=False):
          at = m.end()
      if len(words) >= 2 and words[0] == path and words[1] in OWN:
          return True

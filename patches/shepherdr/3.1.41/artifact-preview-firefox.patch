@@ -1,12 +1,12 @@
 Subject: Artifacts: herdr-artifact preview says to open the link in Firefox through firefox-agent, not the task browser
 Owner: shepherdr
-Versions: >=3.1.34
+Versions: >=3.1.41
 
 diff --git a/mods/artifacts/bin/herdr-artifact b/mods/artifacts/bin/herdr-artifact
-index 218e2df..d0b9e8f 100755
+index ae073f5..6beb07d 100755
 --- a/mods/artifacts/bin/herdr-artifact
 +++ b/mods/artifacts/bin/herdr-artifact
-@@ -1990,9 +1990,9 @@ def cmd_preview(o):
+@@ -2195,9 +2195,9 @@ def cmd_preview(o):
          print(json.dumps({"id": o.id, "link": link}))
      else:
          print(link)
@@ -19,7 +19,7 @@ index 218e2df..d0b9e8f 100755
      return 0
  
  
-@@ -2183,7 +2183,7 @@ def main():
+@@ -2396,7 +2396,7 @@ def main():
      c = cmd("link", cmd_link, "an artifact's link in the web app, for the person")
      c.add_argument("id")
      c.add_argument("--from", dest="machine", help="the machine it's on (default: this one)")
