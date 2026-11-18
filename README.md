@@ -182,6 +182,7 @@ node scripts/patches.mjs apply      # applies the missing ones that apply cleanl
 ## Credits
 
 - [Omarchy](https://github.com/basecamp/omarchy) by Basecamp: the look, themes, wallpapers and theme previews (MIT, [`LICENSE-omarchy`](LICENSE-omarchy)).
+- [Dracula](https://draculatheme.com): the Dracula theme's colors and wallpapers (MIT, [`LICENSE-dracula`](LICENSE-dracula)).
 - [shafiqimtiaz/herdr-omarchy](https://github.com/shafiqimtiaz/herdr-omarchy): the layout this repo started from.
 - The Chat | Terminal switch and `parked.js` are adapted from [Shepherdr](https://github.com/eliasstravik/shepherdr) (MIT), and `omarchy-voice` follows the dictation flow of Shepherdr's chat mod.
 - `omarchy-tabs` is based on RofieSagara/herdr-auto-tabs (Apache-2.0), the commit graph on rabeeh-ta/herdr-git-graph (MIT), and the file icons are Charmed icons. Each mod's `NOTICE` or license file has the details.
