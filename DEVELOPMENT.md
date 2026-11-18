@@ -38,6 +38,9 @@ Each folder under `mods/` is a self-contained Herdr mod. `main.js` is its entry 
 | Pane header, Chat \| Terminal switch | `mods/omarchy-pane/main.js` |
 | Assistant tab opening in Terminal view | `mods/omarchy-pane/assistant.js` |
 | Pane widths across the Chat \| Terminal swap | `mods/omarchy-pane/pane-size.py` |
+| Windows install: what goes in it, key and settings merges | `scripts/win-pc/core.mjs` |
+| Windows install: building the package, commands run on the Mac | `scripts/win-pc.mjs` |
+| Windows install: stage checks, apply, rollback on the PC | `scripts/win-pc/remote.mjs` |
 | Agents shown as Chat (one copy per mod, kept identical) | `mods/omarchy-agents/parked.js`, `mods/omarchy-spaces/parked.js`, `mods/omarchy-tabs/parked.js` |
 | Ending agents whose chat pane closed | `mods/omarchy-agents/sweep.js` |
 | Spaces list and its hover close button | `mods/omarchy-spaces/main.js` |

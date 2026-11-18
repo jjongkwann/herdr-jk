@@ -77,6 +77,23 @@ The agent copies the layout, mods, themes and wallpapers into `~/.config/herdr-a
 > - `omarchy-browser` runs herdr-app's `bin/herdr-browser` and its viewer. `omarchy-pane` runs `node` (`omarchy-browser/page.mjs`) every 4 seconds while the Browser pane is on screen, to read the page's errors from Chrome's local debugging port, and to reload a local page when a file in the space's folder is saved. Its DevTools pane runs `node` (`omarchy-browser/devtools.mjs`) with herdr-app's viewer on a second session, `herdr-omarchy-devtools` (profile `~/.herdr/browser/omarchy-devtools`), closed again when the pane closes.
 > - `omarchy-mod-manager` searches GitHub for mods. It runs `git` and `gh` to download and install them.
 
+### On a Windows PC
+
+`scripts/win-pc.mjs` copies this Mac's whole setup to a Windows PC reached as `win-pc` (`ssh` and `hc`). Run it on the Mac:
+
+```sh
+node scripts/win-pc.mjs stage              # builds the package and checks it on a scratch home on the PC
+node scripts/win-pc.mjs apply --dry-run    # lists every change apply would make
+node scripts/win-pc.mjs apply              # backs up what it changes, then installs
+node scripts/win-pc.mjs rollback           # undoes the last apply from its backup
+```
+
+- It installs the mods, Shepherdr's `lib`, `core` and `bin`, the themes and wallpapers, the layout, the keys and look settings, and the D2KodingLigature Nerd Font for the signed-in user. Windows' other keys and settings stay.
+- Voice dictation, the Simulator and the browser panel stay on the Mac, so the Windows layout has no mic or Simulator.
+- Shepherdr's `herdr-task`, `herdr-artifact` and `herdr-secret` are Python scripts, which Windows can't start by name. Each gets a small `.exe` beside it that runs the script.
+- Windows keeps many `super` keys for itself (Win+K, Win+W, Win+Up, …), and they never reach Herdr. `stage` lists each one with the key to press instead.
+- After `apply`, show the layout with `herdr-app do layout.switch --name omarchy` on the PC.
+
 ## Voice dictation
 
 `super-ctrl-v`, or the mic in the top bar, starts dictation; press it again to stop. The mic shows the recording time.
