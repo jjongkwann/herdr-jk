@@ -3,10 +3,11 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { syncNames } from "./names.js";
 import { renderPaneHeader } from "./pane.js";
-import { spaces, panes, terminals, props, run, openOverlay, theme, shared, setShared, layout, exec, readTextFile, home, appHome, nextCommand, notify, focused, settings } from "herdr";
+import { spaces, panes, terminals, props, run, openOverlay, theme, shared, setShared, layout, exec, hc, readTextFile, home, appHome, nextCommand, notify, focused, settings } from "herdr";
 import { chatAgents, spacesWithChats } from "./parked.js";
 import { resumeCommand, argvOf } from "./reopen.js";
 import { coordinatorTab, openCoordinator } from "./coordinator.js";
+import { firstAgents, stillFresh, assistantWords, assistantLabels, sendRequest } from "./first-agent.js";
 import { jump } from "./jump.js";
 import { PaneHistory, placeOf, SETTLE } from "./history.js";
 import { tabWidths, TAB_ICONS, NEW_TAB } from "./sizing.js";
@@ -21,6 +22,23 @@ function find(node, id) {
     if (found) return found;
   }
   return null;
+}
+
+// The agents being made Assistants (first-agent.js): each is tried once.
+const adopting = new Set();
+
+// The first agent opened in a space becomes its Assistant: its first message is the template's words,
+// then the labels and the tab Shepherdr's own Assistant has. A failed step leaves a plain agent.
+async function adoptAssistant({ space, address, tab }) {
+  const got = await hc(["get", address]);
+  if (got.code !== 0 || !stillFresh(JSON.parse(got.stdout))) return;
+  const words = assistantWords(await readTextFile(`${home()}/.config/herdr-core/templates/assistant.md`));
+  if (!words) return;
+  const sent = await exec("sh", ["-c", 'printf "%s\\n" "$1" | hc connect', "hc-send", sendRequest(address, words)]);
+  if (sent.code !== 0 || !sent.stdout.includes('"result"')) return;
+  await hc(["label", address, ...assistantLabels(space, tab)]);
+  run("tab.rename", { id: tab, name: "Assistant" });
+  run("tab.move", { id: tab, index: 1 });
 }
 
 // Herdr's spaces with the agents shown as Chat counted in their tabs' status: such an agent has
@@ -226,6 +244,12 @@ export default class Tabs extends View {
       setShared("coordinator.openreq", null);
       const s = raw.find(x => x.id === req.space);
       if (s && Date.now() - req.at < 10000 && !coordinatorTab(s)) openCoordinator(s, req.show !== false);
+    }
+    // Off with Shepherdr's own automatic Assistants (shared "coordinator.auto").
+    if (shared("coordinator.auto") !== false) for (const found of firstAgents({ spaces: raw, terminals: allTerminals, panes: allPanes })) {
+      if (adopting.has(found.address) || coordinatorTab(found.space, allTerminals, allPanes)) continue;
+      adopting.add(found.address);
+      adoptAssistant(found).catch(() => {});
     }
     const space = withChats(allPanes, allTerminals, raw).find(p => p.active);
     const shown = space?.tabs ?? [];
