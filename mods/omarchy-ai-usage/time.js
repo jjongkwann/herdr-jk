@@ -27,13 +27,15 @@ export function resets(w) {
   return `resets ${DAYS[new Date(end).getDay()]} at ${clock(end)}`;
 }
 
-// Time left, to the hour past a day: "3d19h", "4h59m". The top bar's weekly windows.
-export function resetsLeft(w) {
+// The top bar's reset: local month/day from a day away ("11/21"), the time left under that ("2h10m").
+// Empty when resets_at is unusable or already past.
+export function resetsCompact(w) {
   const end = Math.round(Date.parse(w.resets_at) / 60e3) * 60e3;
-  if (!end) return "";
-  const left = Math.max(0, end - Date.now());
-  if (left >= DAY) return `${Math.floor(left / DAY)}d${Math.floor((left % DAY) / H)}h`;
-  return `${Math.floor(left / H)}h${Math.floor((left % H) / 60e3)}m`;
+  const left = end - Date.now();
+  if (!(left > 0)) return "";
+  if (left < DAY) return `${Math.floor(left / H)}h${Math.floor((left % H) / 60e3)}m`;
+  const date = new Date(end);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
 export function resetsShort(w) {
