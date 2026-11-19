@@ -3,11 +3,11 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { syncNames } from "./names.js";
 import { renderPaneHeader } from "./pane.js";
-import { spaces, panes, terminals, props, run, openOverlay, theme, shared, setShared, layout, exec, hc, readTextFile, home, appHome, nextCommand, notify, focused, settings } from "herdr";
+import { spaces, panes, terminals, props, run, openOverlay, theme, shared, setShared, layout, exec, hc, readTextFile, writeTextFile, home, appHome, nextCommand, notify, focused, settings } from "herdr";
 import { chatAgents, spacesWithChats } from "./parked.js";
 import { resumeCommand, argvOf } from "./reopen.js";
 import { coordinatorTab, openCoordinator } from "./coordinator.js";
-import { firstAgents, stillFresh, assistantWords, assistantLabels, sendRequest } from "./first-agent.js";
+import { firstAgents, noteStarts, stillFresh, assistantWords, assistantLabels, deliver } from "./first-agent.js";
 import { jump } from "./jump.js";
 import { PaneHistory, placeOf, SETTLE } from "./history.js";
 import { tabWidths, TAB_ICONS, NEW_TAB } from "./sizing.js";
@@ -24,19 +24,22 @@ function find(node, id) {
   return null;
 }
 
-// The agents being made Assistants (first-agent.js): each is tried once.
+// The agents being made Assistants (first-agent.js): each start of an agent is tried once.
 const adopting = new Set();
+// When each terminal's agent started (noteStarts).
+const starts = new Map();
 
 // The first agent opened in a space becomes its Assistant: its first message is the template's words,
-// then the labels and the tab Shepherdr's own Assistant has. A failed step leaves a plain agent.
+// then the labels and the tab Shepherdr's own Assistant has. A failed step throws and leaves a plain agent.
 async function adoptAssistant({ space, address, tab }) {
   const got = await hc(["get", address]);
-  if (got.code !== 0 || !stillFresh(JSON.parse(got.stdout))) return;
+  if (got.code !== 0) throw new Error(got.stderr.trim() || `hc get ${address} failed`);
+  if (!stillFresh(JSON.parse(got.stdout), Date.now(), starts.get(address))) return;
   const words = assistantWords(await readTextFile(`${home()}/.config/herdr-core/templates/assistant.md`));
-  if (!words) return;
-  const sent = await exec("sh", ["-c", 'printf "%s\\n" "$1" | hc connect', "hc-send", sendRequest(address, words)]);
-  if (sent.code !== 0 || !sent.stdout.includes('"result"')) return;
-  await hc(["label", address, ...assistantLabels(space, tab)]);
+  if (!words) throw new Error("The assistant template is missing or empty");
+  await deliver({ exec, writeTextFile, appHome }, address, words);
+  const labelled = await hc(["label", address, ...assistantLabels(space, tab)]);
+  if (labelled.code !== 0) throw new Error(labelled.stderr.trim() || `hc label ${address} failed`);
   run("tab.rename", { id: tab, name: "Assistant" });
   run("tab.move", { id: tab, index: 1 });
 }
@@ -245,11 +248,16 @@ export default class Tabs extends View {
       const s = raw.find(x => x.id === req.space);
       if (s && Date.now() - req.at < 10000 && !coordinatorTab(s)) openCoordinator(s, req.show !== false);
     }
+    noteStarts(starts, allTerminals);
     // Off with Shepherdr's own automatic Assistants (shared "coordinator.auto").
-    if (shared("coordinator.auto") !== false) for (const found of firstAgents({ spaces: raw, terminals: allTerminals, panes: allPanes })) {
-      if (adopting.has(found.address) || coordinatorTab(found.space, allTerminals, allPanes)) continue;
-      adopting.add(found.address);
-      adoptAssistant(found).catch(() => {});
+    if (shared("coordinator.auto") !== false) for (const found of firstAgents({ spaces: raw, terminals: allTerminals, panes: allPanes, starts })) {
+      const attempt = `${found.address}@${starts.get(found.address) ?? 0}`;
+      if (adopting.has(attempt) || coordinatorTab(found.space, allTerminals, allPanes)) continue;
+      adopting.add(attempt);
+      adoptAssistant(found).catch((e) => {
+        console.log(`Assistant adoption failed for ${found.address}: ${e?.message ?? e}`);
+        notify({ title: "This agent didn't become the Assistant", body: String(e?.message ?? e), level: "error" });
+      });
     }
     const space = withChats(allPanes, allTerminals, raw).find(p => p.active);
     const shown = space?.tabs ?? [];
