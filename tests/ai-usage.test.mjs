@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { H, DAY } from '../mods/omarchy-ai-usage/time.js';
+import { H, DAY, resetsCompact } from '../mods/omarchy-ai-usage/time.js';
 
 // `system.platform` is what Herdr's os.platform() says ("linux" unless given); `system.security`
 // answers each `security` call with an { code, stdout } (or throws, as exec does when it can't run).
@@ -414,6 +414,7 @@ function el() {
         else if (prop === 'children') node.kids.push(...args[0]);
         else if (prop === 'when') return args[0] ? args[1](self) : self;
         else if (prop === 'tooltip') node.tip = args[0];
+        else if (prop === 'text_color') node.color = args[0];
         else if (prop === 'on_click' || prop === 'on_mouse_down') node.on[prop] = args.at(-1);
         return self;
       };
@@ -452,4 +453,89 @@ test('in the top bar only the meters open the popup, so the rest of the block dr
   assert.equal(stopped, 1, 'a press on the meters does not reach the window drag');
   assert.equal(overlays.length, 1);
   assert.equal(overlays[0].props.below, true);
+});
+
+test('the top bar reset reads a local date from a day away and the time left under that', t => {
+  const now = new Date(2030, 10, 19, 12, 0).getTime();
+  t.mock.method(Date, 'now', () => now);
+  const at = ms => ({ resets_at: new Date(ms).toISOString() });
+  assert.equal(resetsCompact(at(new Date(2030, 10, 21, 0, 30).getTime())), '11/21');
+  assert.equal(resetsCompact(at(new Date(2031, 0, 5, 23, 59).getTime())), '1/5');
+  assert.equal(resetsCompact(at(now + 2 * H + 10 * 60e3)), '2h10m');
+  // The API reports resets a fraction of a second before the minute.
+  assert.equal(resetsCompact(at(now + 2 * H + 10 * 60e3 - 500)), '2h10m');
+  assert.equal(resetsCompact(at(now + DAY)), '11/20', 'exactly a day away is a date');
+  assert.equal(resetsCompact(at(now + DAY - 60e3)), '23h59m', 'a minute under a day is the time left');
+});
+
+test('the top bar shows no reset for a resets_at it cannot use', t => {
+  const now = new Date(2030, 10, 19, 12, 0).getTime();
+  t.mock.method(Date, 'now', () => now);
+  for (const resets_at of ['later', 'next week', '', null, undefined]) assert.equal(resetsCompact({ resets_at }), '');
+  assert.equal(resetsCompact({}), '');
+  assert.equal(resetsCompact({ resets_at: new Date(now - H).toISOString() }), '', 'a reset already past says nothing');
+});
+
+// The compact bar for one Codex capsule. `strings(id)` lists a row's texts in order, `color(text)` says how one is drawn.
+function compactBar(windows, fetched) {
+  const h = usageHarness({}, {}, 200, '/home/test', {}, {
+    div: el, h_flex: el, v_flex: el, image: el, svg: el, resetsCompact,
+    props: () => ({ compact: true }), theme: () => new Proxy({}, { get: (_t, name) => name }),
+    focused: () => null, settings: () => ({ zoom: 1 }), openOverlay() {},
+  });
+  h.state.set('omarchy-ai-usage.shown', { list: [{ id: 'codex', provider: 'codex', label: 'Codex', icon: 'codex.svg' }], idle: false });
+  h.state.set('omarchy-ai-usage.codex', { fetched, windows });
+  const cx = { timer: { every() {} }, spawn() {}, notify() {} };
+  const view = new h.AiUsage();
+  view.init({}, cx);
+  const texts = n => n.kids.flatMap(k => typeof k === 'string' ? [k] : k?.[NODE] ? texts(k[NODE]) : []);
+  const row = id => walk(view.render(cx)).find(n => n.id === id);
+  return {
+    view,
+    strings: id => texts(row(id)),
+    color: text => walk(view.render(cx)).find(n => n.kids.includes(text)).color,
+  };
+}
+
+test('each limit in the top bar shows its reset after its percent, even far below its limit', t => {
+  const now = new Date(2030, 10, 19, 12, 0).getTime();
+  t.mock.method(Date, 'now', () => now);
+  const windows = [
+    { short: '5h', used: 12, resets_at: new Date(now + 2 * H + 10 * 60e3).toISOString() },
+    { short: '7d', used: 30, resets_at: new Date(2030, 10, 21, 9, 0).toISOString() },
+  ];
+  const bar = compactBar(windows, new Date(now).toISOString());
+  assert.deepEqual(bar.strings('usage'), ['5h', '12%', '↻ 2h10m', '7d', '30%', '↻ 11/21']);
+  assert.equal(bar.color('↻ 11/21'), 'muted');
+  assert.equal(compactBar(windows, new Date(now - DAY).toISOString()).color('↻ 11/21'), 'dim', 'stale data dims it with the rest');
+});
+
+test('a limit without a usable reset leaves no stray mark in the top bar', t => {
+  const now = new Date(2030, 10, 19, 12, 0).getTime();
+  t.mock.method(Date, 'now', () => now);
+  const bar = compactBar([
+    { short: '5h', used: 12, resets_at: 'later' },
+    { short: '7d', used: 30, resets_at: new Date(2030, 10, 21, 9, 0).toISOString() },
+  ], new Date(now).toISOString());
+  assert.deepEqual(bar.strings('usage'), ['5h', '12%', '7d', '30%', '↻ 11/21']);
+});
+
+test('short of room the top bar drops every reset and keeps the percents', t => {
+  const now = new Date(2030, 10, 19, 12, 0).getTime();
+  t.mock.method(Date, 'now', () => now);
+  const { view, strings } = compactBar([
+    { short: '5h', used: 12, resets_at: new Date(now + 2 * H).toISOString() },
+    { short: '7d', used: 30, resets_at: new Date(2030, 10, 21, 9, 0).toISOString() },
+  ], new Date(now).toISOString());
+  let redraws = 0;
+  const cx = { notify() { redraws++; } };
+  view.measure('fullWidth')({ width: 300, height: 22 }, cx);
+  view.measure('blockWidth')({ width: 320, height: 32 }, cx);
+  assert.equal(redraws, 2);
+  assert.deepEqual(strings('usage'), ['5h', '12%', '↻ 2h0m', '7d', '30%', '↻ 11/21'], 'exactly enough room keeps them');
+  view.measure('blockWidth')({ width: 319, height: 32 }, cx);
+  assert.deepEqual(strings('usage'), ['5h', '12%', '7d', '30%']);
+  assert.deepEqual(strings('usage-full'), ['5h', '12%', '↻ 2h0m', '7d', '30%', '↻ 11/21'], 'the unseen copy still measures them');
+  view.measure('blockWidth')({ width: 319, height: 32 }, cx);
+  assert.equal(redraws, 3, 'an unchanged width does not redraw');
 });

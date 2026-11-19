@@ -3,7 +3,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { agents, exec, focused, home, knownAgents, panes, shared, setShared, props, openOverlay, settings, theme } from "herdr";
 
 import { PROVIDERS, sourcesFor, alwaysSources, fetchUsage } from "./providers.js";
-import { clock, pace, resets, resetsShort, resetsLeft } from "./time.js";
+import { clock, pace, resets, resetsShort, resetsCompact } from "./time.js";
 
 const MOD = "omarchy-ai-usage";
 const keyOf = id => `${MOD}.${id}`;
@@ -11,7 +11,7 @@ const SHOWN = keyOf("shown");
 const EVERY = 5 * 60e3;
 // One missed cycle plus slack, so a slow fetch doesn't flash the bar grey.
 const STALE = 12 * 60e3;
-const POPUP_W = 320, GAP = 6;
+const POPUP_W = 320, GAP = 6, BLOCK_PX = 10;
 
 // Sources with a request in flight. Module scope is shared by every copy (the bar and its popup),
 // so ticks and Refresh clicks during a slow request don't stack more requests on that provider.
@@ -148,17 +148,28 @@ export default class AiUsage extends View {
     return this.clickable(this.shell(h_flex())).pl(12).pr(8).gap(12).text_size(11.8).child(v_flex().gap(2).children(rows));
   }
 
-  // Each provider in a capsule: its first limit as a bar and percent, its second as a number. The popup has the rest.
+  // Keeps a measured width and redraws when it changes.
+  measure(key) {
+    return (size, cx) => {
+      if (this[key] === size.width) return;
+      this[key] = size.width;
+      cx.notify();
+    };
+  }
+
+  // Each provider in a capsule: its first limit as a bar and percent, its second as a number, each with its reset. The popup has the rest.
   compact() {
     const t = theme(), list = shownList(), idle = shared(SHOWN)?.idle;
-    const segs = list.map(s => {
+    const capsules = showResets => list.map(s => {
       const u = shared(keyOf(s.id));
       const stale = idle || isStale(u);
       const windows = u?.windows ?? [];
       const [first, second] = windows;
       const number = w => stale ? t.dim : w.used >= 80 ? color(w, stale, t, s) : t.foreground;
-      // The reset says when relief comes, so it shows once a limit is close.
-      const close = [first, second].find(w => w && w.used >= 75 && resetsLeft(w));
+      const reset = w => {
+        const when = showResets && resetsCompact(w);
+        return when ? [div().whitespace_nowrap().text_color(stale ? t.dim : t.muted).child(`↻ ${when}`)] : [];
+      };
       return h_flex().h(22).px(8).gap(6).items_center().flex_none().rounded(5).bg(t.foreground + "0a")
         .child(this.icon(s, 13, stale))
         // The profile's name, so a work and a personal Claude tell apart.
@@ -167,17 +178,23 @@ export default class AiUsage extends View {
         .when(Boolean(first), el => el
           .child(div().whitespace_nowrap().text_color(t.muted).child(first.short))
           .child(div().relative().w(42).h(5).rounded(3).bg(t.border).child(div().absolute().left(0).top(0).h_full().rounded(3).w(`${clamp(first.used)}%`).bg(color(first, stale, t, s))))
-          .child(div().whitespace_nowrap().font_semibold().text_color(number(first)).child(`${first.used}%`)))
+          .child(div().whitespace_nowrap().font_semibold().text_color(number(first)).child(`${first.used}%`))
+          .children(reset(first)))
         .when(Boolean(second), el => el
           .child(div().whitespace_nowrap().text_color(t.muted).child(second.short))
-          .child(div().whitespace_nowrap().font_semibold().text_color(number(second)).child(`${second.used}%`)))
+          .child(div().whitespace_nowrap().font_semibold().text_color(number(second)).child(`${second.used}%`))
+          .children(reset(second)))
         // A limit the capsule has no room for still warns.
-        .when(!stale && windows.slice(2).some(w => w.used >= 80), el => el.child(div().font_bold().text_color(t.working).child("!")))
-        .when(Boolean(close), el => el.child(div().whitespace_nowrap().text_color(t.muted).child(`↻ ${resetsLeft(close)}`)));
+        .when(!stale && windows.slice(2).some(w => w.used >= 80), el => el.child(div().font_bold().text_color(t.working).child("!")));
     });
+    const row = () => h_flex().items_center().gap(8).text_size(11.5);
+    // An unseen copy with every reset says how wide the bar wants to be. Short of room, all resets go, so the percents stay whole.
+    const zoom = Number(settings()?.zoom) || 1;
+    const fits = !(this.fullWidth > this.blockWidth - 2 * BLOCK_PX * zoom);
     // Only the meters open the popup; the empty rest of the block drags the window.
-    return this.shell(h_flex()).justify_center().px(10).child(this.clickable(h_flex().id("usage").h_full().items_center()
-      .gap(8).text_size(11.5).children(segs)));
+    return this.shell(h_flex()).relative().justify_center().px(BLOCK_PX).on_size_change(this.measure("blockWidth"))
+      .child(row().id("usage-full").absolute().top(0).left(0).opacity(0).on_size_change(this.measure("fullWidth")).children(capsules(true)))
+      .child(this.clickable(row().id("usage").h_full().children(capsules(fits))));
   }
 
   details() {
