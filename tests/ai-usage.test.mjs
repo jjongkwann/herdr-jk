@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { H, DAY, resetsCompact } from '../mods/omarchy-ai-usage/time.js';
+import { H, DAY, capsuleReset } from '../mods/omarchy-ai-usage/time.js';
 
 // `system.platform` is what Herdr's os.platform() says ("linux" unless given); `system.security`
 // answers each `security` call with an { code, stdout } (or throws, as exec does when it can't run).
@@ -13,6 +13,7 @@ function usageHarness(files = {}, response = {}, status = 200, homeDir = '/home/
   const commands = [];
   const dependencies = {
     View: class {},
+    capsuleReset,
     createHash,
     platform: () => system.platform ?? 'linux',
     exec: async (command, args) => {
@@ -401,7 +402,7 @@ test('periodic ticks keep refreshing and redrawing while a forced Copilot fetch 
   }
 });
 
-// Elements that remember their id, children, handlers and tooltip.
+// Elements that remember their id, children, handlers, tooltip, width and colors.
 const NODE = Symbol('node');
 function el() {
   const node = { id: null, kids: [], on: {}, tip: null };
@@ -415,6 +416,8 @@ function el() {
         else if (prop === 'when') return args[0] ? args[1](self) : self;
         else if (prop === 'tooltip') node.tip = args[0];
         else if (prop === 'text_color') node.color = args[0];
+        else if (prop === 'w') node.width = args[0];
+        else if (prop === 'bg') node.fill = args[0];
         else if (prop === 'on_click' || prop === 'on_mouse_down') node.on[prop] = args.at(-1);
         return self;
       };
@@ -455,10 +458,11 @@ test('in the top bar only the meters open the popup, so the rest of the block dr
   assert.equal(overlays[0].props.below, true);
 });
 
-// The compact bar for one Codex capsule. `strings(id)` lists a row's texts in order, `color(text)` says how one is drawn.
+// The compact bar for one Codex capsule. `strings(id)` lists a row's texts in order, `bars(id)` its bars as
+// [fill width, fill color], `color(text)` says how one text is drawn.
 function compactBar(windows, fetched) {
   const h = usageHarness({}, {}, 200, '/home/test', {}, {
-    div: el, h_flex: el, v_flex: el, image: el, svg: el, resetsCompact,
+    div: el, h_flex: el, v_flex: el, image: el, svg: el,
     props: () => ({ compact: true }), theme: () => new Proxy({}, { get: (_t, name) => name }),
     focused: () => null, settings: () => ({ zoom: 1 }), openOverlay() {},
   });
@@ -472,49 +476,100 @@ function compactBar(windows, fetched) {
   return {
     view,
     strings: id => texts(row(id)),
+    bars: id => walk(row(id).kids[0]).filter(n => n.width === 42).map(n => { const fill = n.kids[0][NODE]; return [fill.width, fill.fill]; }),
     color: text => walk(view.render(cx)).find(n => n.kids.includes(text)).color,
   };
 }
 
-test('each limit in the top bar shows its reset after its percent, even far below its limit', t => {
-  const now = new Date(2030, 10, 19, 12, 0).getTime();
-  t.mock.method(Date, 'now', () => now);
-  const windows = [
-    { short: '5h', used: 12, resets_at: new Date(now + 2 * H + 10 * 60e3).toISOString() },
-    { short: '7d', used: 30, resets_at: new Date(now + 2 * DAY + 5 * H).toISOString() },
-  ];
-  const bar = compactBar(windows, new Date(now).toISOString());
-  assert.deepEqual(bar.strings('usage'), ['5h', '12%', '↻ 2h 10m', '7d', '30%', '↻ 2d 5h']);
-  assert.equal(bar.color('↻ 2d 5h'), 'muted');
-  assert.equal(compactBar(windows, new Date(now - DAY).toISOString()).color('↻ 2d 5h'), 'dim', 'stale data dims it with the rest');
-});
+const NOW = new Date(2030, 10, 19, 12, 0).getTime();
+const fresh = new Date(NOW).toISOString();
+const limit = (short, used, left) => ({ short, used, resets_at: left === undefined ? 'later' : new Date(NOW + left).toISOString() });
 
-test('a limit without a usable reset leaves no stray mark in the top bar', t => {
-  const now = new Date(2030, 10, 19, 12, 0).getTime();
-  t.mock.method(Date, 'now', () => now);
-  const bar = compactBar([
-    { short: '5h', used: 12, resets_at: 'later' },
-    { short: '7d', used: 30, resets_at: new Date(now + 2 * DAY + 5 * H).toISOString() },
-  ], new Date(now).toISOString());
+test('each capsule in the top bar draws both limits as bars and ends in one reset', t => {
+  t.mock.method(Date, 'now', () => NOW);
+  const windows = [limit('5h', 12, 2 * H + 10 * 60e3), limit('7d', 30, 2 * DAY + 5 * H)];
+  const bar = compactBar(windows, fresh);
   assert.deepEqual(bar.strings('usage'), ['5h', '12%', '7d', '30%', '↻ 2d 5h']);
+  assert.deepEqual(bar.bars('usage'), [['12%', 'accent'], ['30%', 'accent']]);
+  assert.equal(bar.color('↻ 2d 5h'), 'muted');
+  const stale = compactBar(windows, new Date(NOW - DAY).toISOString());
+  assert.equal(stale.color('↻ 2d 5h'), 'dim', 'stale data dims the reset with the rest');
+  assert.deepEqual(stale.bars('usage'), [['12%', 'dim'], ['30%', 'dim']]);
 });
 
-test('short of room the top bar drops every reset and keeps the percents', t => {
-  const now = new Date(2030, 10, 19, 12, 0).getTime();
-  t.mock.method(Date, 'now', () => now);
-  const { view, strings } = compactBar([
-    { short: '5h', used: 12, resets_at: new Date(now + 2 * H).toISOString() },
-    { short: '7d', used: 30, resets_at: new Date(now + 2 * DAY + 5 * H).toISOString() },
-  ], new Date(now).toISOString());
+test('the second bar follows the same color thresholds as the first', t => {
+  t.mock.method(Date, 'now', () => NOW);
+  const second = used => compactBar([limit('5h', 1, H), limit('7d', used, DAY)], fresh).bars('usage')[1];
+  assert.deepEqual(second(79), ['79%', 'accent']);
+  assert.deepEqual(second(80), ['80%', 'working']);
+  assert.deepEqual(second(94), ['94%', 'working']);
+  assert.deepEqual(second(95), ['95%', 'blocked']);
+  assert.deepEqual(second(130), ['100%', 'blocked'], 'the fill stops at the end of the bar');
+});
+
+test('the capsule shows the reset of the limit that will run out first', t => {
+  t.mock.method(Date, 'now', () => NOW);
+  const shown = (a, b) => compactBar([limit('5h', a, 3 * H), limit('7d', b, 2 * DAY)], fresh).strings('usage').at(-1);
+  assert.equal(shown(60, 20), '↻ 3h 0m', 'the first limit is used more');
+  assert.equal(shown(20, 60), '↻ 2d 0h', 'the second limit is used more');
+  assert.equal(shown(40, 40), '↻ 2d 0h', 'a tie goes to the second limit');
+});
+
+test('a capsule whose limits have no usable reset leaves no stray mark', t => {
+  t.mock.method(Date, 'now', () => NOW);
+  const bar = compactBar([limit('5h', 12), limit('7d', 30)], fresh);
+  assert.deepEqual(bar.strings('usage'), ['5h', '12%', '7d', '30%']);
+  assert.deepEqual(compactBar([limit('5h', 50), limit('7d', 30, DAY)], fresh).strings('usage'), ['5h', '50%', '7d', '30%', '↻ 1d 0h'], 'the other limit stands in');
+});
+
+test('a provider with one limit keeps one bar and that limit\'s reset', t => {
+  t.mock.method(Date, 'now', () => NOW);
+  const bar = compactBar([limit('mo', 30, 3 * DAY)], fresh);
+  assert.deepEqual(bar.strings('usage'), ['mo', '30%', '↻ 3d 0h']);
+  assert.deepEqual(bar.bars('usage'), [['30%', 'accent']]);
+});
+
+test('a hidden limit near its end still warns after the reset', t => {
+  t.mock.method(Date, 'now', () => NOW);
+  const shown = used => compactBar([limit('5h', 12, H), limit('7d', 30, DAY), limit('Fable', used, DAY)], fresh).strings('usage');
+  assert.deepEqual(shown(80), ['5h', '12%', '7d', '30%', '↻ 1d 0h', '!']);
+  assert.deepEqual(shown(79), ['5h', '12%', '7d', '30%', '↻ 1d 0h']);
+});
+
+test('short of room the top bar drops every reset, then every second bar, and keeps the percents', t => {
+  t.mock.method(Date, 'now', () => NOW);
+  const { view, strings, bars } = compactBar([limit('5h', 12, 2 * H), limit('7d', 30, 2 * DAY + 5 * H)], fresh);
   let redraws = 0;
   const cx = { notify() { redraws++; } };
-  view.measure('fullWidth')({ width: 300, height: 22 }, cx);
-  view.measure('blockWidth')({ width: 320, height: 32 }, cx);
-  assert.equal(redraws, 2);
-  assert.deepEqual(strings('usage'), ['5h', '12%', '↻ 2h 0m', '7d', '30%', '↻ 2d 5h'], 'exactly enough room keeps them');
-  view.measure('blockWidth')({ width: 319, height: 32 }, cx);
-  assert.deepEqual(strings('usage'), ['5h', '12%', '7d', '30%']);
-  assert.deepEqual(strings('usage-full'), ['5h', '12%', '↻ 2h 0m', '7d', '30%', '↻ 2d 5h'], 'the unseen copy still measures them');
-  view.measure('blockWidth')({ width: 319, height: 32 }, cx);
-  assert.equal(redraws, 3, 'an unchanged width does not redraw');
+  view.measure('fullWidth')({ width: 400, height: 22 }, cx);
+  view.measure('barsWidth')({ width: 340, height: 22 }, cx);
+  view.measure('blockWidth')({ width: 420, height: 32 }, cx);
+  assert.equal(redraws, 3);
+  const all = ['5h', '12%', '7d', '30%', '↻ 2d 5h'], percents = ['5h', '12%', '7d', '30%'];
+  assert.deepEqual(strings('usage'), all, 'exactly enough room keeps the reset');
+  assert.equal(bars('usage').length, 2);
+
+  view.measure('blockWidth')({ width: 419, height: 32 }, cx);
+  assert.deepEqual(strings('usage'), percents, 'the reset goes first');
+  assert.equal(bars('usage').length, 2, 'both bars stay while they fit');
+
+  view.measure('blockWidth')({ width: 360, height: 32 }, cx);
+  assert.equal(bars('usage').length, 2, 'exactly enough room keeps the second bar');
+
+  view.measure('blockWidth')({ width: 359, height: 32 }, cx);
+  assert.deepEqual(strings('usage'), percents, 'every percent stays');
+  assert.deepEqual(bars('usage'), [['12%', 'accent']], 'only the second bar goes');
+
+  assert.deepEqual(strings('usage-full'), all, 'the unseen copies still measure what is hidden');
+  assert.equal(bars('usage-full').length, 2);
+  assert.deepEqual(strings('usage-bars'), percents);
+  assert.equal(bars('usage-bars').length, 2);
+
+  const before = redraws;
+  view.measure('blockWidth')({ width: 359, height: 32 }, cx);
+  assert.equal(redraws, before, 'an unchanged width does not redraw');
+
+  view.measure('blockWidth')({ width: 420, height: 32 }, cx);
+  assert.deepEqual(strings('usage'), all, 'room coming back brings them back');
+  assert.equal(bars('usage').length, 2);
 });

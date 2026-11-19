@@ -3,7 +3,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { agents, exec, focused, home, knownAgents, panes, shared, setShared, props, openOverlay, settings, theme } from "herdr";
 
 import { PROVIDERS, sourcesFor, alwaysSources, fetchUsage } from "./providers.js";
-import { clock, pace, resets, resetsShort, resetsCompact } from "./time.js";
+import { clock, pace, resets, resetsShort, capsuleReset } from "./time.js";
 
 const MOD = "omarchy-ai-usage";
 const keyOf = id => `${MOD}.${id}`;
@@ -157,44 +157,43 @@ export default class AiUsage extends View {
     };
   }
 
-  // Each provider in a capsule: its first limit as a bar and percent, its second as a number, each with its reset. The popup has the rest.
+  // Each provider in a capsule: its first two limits, each a label, a bar and a percent, then one reset. The popup has the rest.
   compact() {
     const t = theme(), list = shownList(), idle = shared(SHOWN)?.idle;
-    const capsules = showResets => list.map(s => {
+    const capsules = (showResets, secondBars) => list.map(s => {
       const u = shared(keyOf(s.id));
       const stale = idle || isStale(u);
       const windows = u?.windows ?? [];
       const [first, second] = windows;
       const number = w => stale ? t.dim : w.used >= 80 ? color(w, stale, t, s) : t.foreground;
-      const reset = w => {
-        const when = showResets && resetsCompact(w);
-        return when ? [div().whitespace_nowrap().text_color(stale ? t.dim : t.muted).child(`↻ ${when}`)] : [];
-      };
+      const limit = (w, withBar) => [
+        div().whitespace_nowrap().text_color(t.muted).child(w.short),
+        ...(withBar ? [div().relative().w(42).h(5).rounded(3).bg(t.border).child(div().absolute().left(0).top(0).h_full().rounded(3).w(`${clamp(w.used)}%`).bg(color(w, stale, t, s)))] : []),
+        div().whitespace_nowrap().font_semibold().text_color(number(w)).child(`${w.used}%`),
+      ];
+      const when = showResets ? capsuleReset(first, second) : "";
       return h_flex().h(22).px(8).gap(6).items_center().flex_none().rounded(5).bg(t.foreground + "0a")
         .child(this.icon(s, 13, stale))
         // The profile's name, so a work and a personal Claude tell apart.
         .when(s.provider === "claude", el => el.child(div().whitespace_nowrap().text_color(stale ? t.dim : t.foreground).child(s.label)))
         .when(Boolean(s.note) || !first, el => el.child(div().whitespace_nowrap().text_color(t.muted).child(s.note ?? (u?.error ? "no data" : u?.fetched ? "no limits" : "…"))))
-        .when(Boolean(first), el => el
-          .child(div().whitespace_nowrap().text_color(t.muted).child(first.short))
-          .child(div().relative().w(42).h(5).rounded(3).bg(t.border).child(div().absolute().left(0).top(0).h_full().rounded(3).w(`${clamp(first.used)}%`).bg(color(first, stale, t, s))))
-          .child(div().whitespace_nowrap().font_semibold().text_color(number(first)).child(`${first.used}%`))
-          .children(reset(first)))
-        .when(Boolean(second), el => el
-          .child(div().whitespace_nowrap().text_color(t.muted).child(second.short))
-          .child(div().whitespace_nowrap().font_semibold().text_color(number(second)).child(`${second.used}%`))
-          .children(reset(second)))
+        .when(Boolean(first), el => el.children(limit(first, true)))
+        .when(Boolean(second), el => el.children(limit(second, secondBars)))
+        .when(Boolean(when), el => el.child(div().whitespace_nowrap().text_color(stale ? t.dim : t.muted).child(`↻ ${when}`)))
         // A limit the capsule has no room for still warns.
         .when(!stale && windows.slice(2).some(w => w.used >= 80), el => el.child(div().font_bold().text_color(t.working).child("!")));
     });
     const row = () => h_flex().items_center().gap(8).text_size(11.5);
-    // An unseen copy with every reset says how wide the bar wants to be. Short of room, all resets go, so the percents stay whole.
+    // Unseen copies say how wide the bar wants to be with its resets and without them.
+    // Short of room, all resets go first, then all second bars, so the percents stay whole.
     const zoom = Number(settings()?.zoom) || 1;
-    const fits = !(this.fullWidth > this.blockWidth - 2 * BLOCK_PX * zoom);
+    const fits = width => !(width > this.blockWidth - 2 * BLOCK_PX * zoom);
+    const unseen = (id, key, ...shape) => row().id(id).absolute().top(0).left(0).opacity(0).on_size_change(this.measure(key)).children(capsules(...shape));
     // Only the meters open the popup; the empty rest of the block drags the window.
     return this.shell(h_flex()).relative().justify_center().px(BLOCK_PX).on_size_change(this.measure("blockWidth"))
-      .child(row().id("usage-full").absolute().top(0).left(0).opacity(0).on_size_change(this.measure("fullWidth")).children(capsules(true)))
-      .child(this.clickable(row().id("usage").h_full().children(capsules(fits))));
+      .child(unseen("usage-full", "fullWidth", true, true))
+      .child(unseen("usage-bars", "barsWidth", false, true))
+      .child(this.clickable(row().id("usage").h_full().children(capsules(fits(this.fullWidth), fits(this.barsWidth)))));
   }
 
   details() {

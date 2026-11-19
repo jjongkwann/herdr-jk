@@ -38,6 +38,13 @@ export function resetsCompact(w) {
   return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
+// The one reset a capsule shows: the limit with the higher use runs out first, the second on a tie.
+// When that limit has no usable time the other's stands in; empty when neither has one.
+export function capsuleReset(first, second) {
+  const [chosen, other] = !second || first?.used > second.used ? [first, second] : [second, first];
+  return (chosen && resetsCompact(chosen)) || (other && resetsCompact(other)) || "";
+}
+
 export function resetsShort(w) {
   const end = Math.round(Date.parse(w.resets_at) / 60e3) * 60e3;
   if (!end) return "";

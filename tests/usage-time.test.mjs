@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { H, DAY, clock, pace, resets, resetsCompact, resetsShort } from '../mods/omarchy-ai-usage/time.js';
+import { H, DAY, capsuleReset, clock, pace, resets, resetsCompact, resetsShort } from '../mods/omarchy-ai-usage/time.js';
 
 const M = 60e3;
 
@@ -57,6 +57,42 @@ test('the top bar shows no reset for a resets_at it cannot use', t => {
   assert.equal(resetsCompact({}), '');
   assert.equal(resetsCompact({ resets_at: new Date(now).toISOString() }), '', 'a reset due now says nothing');
   assert.equal(resetsCompact({ resets_at: new Date(now - H).toISOString() }), '', 'a reset already past says nothing');
+});
+
+test('a capsule shows the reset of its more used limit, the second on a tie', t => {
+  const now = new Date(2030, 10, 19, 12, 0).getTime();
+  t.mock.method(Date, 'now', () => now);
+  const first = used => ({ used, resets_at: new Date(now + 5 * H).toISOString() });
+  const second = used => ({ used, resets_at: new Date(now + 2 * DAY).toISOString() });
+  assert.equal(capsuleReset(first(60), second(20)), '5h 0m');
+  assert.equal(capsuleReset(first(20), second(60)), '2d 0h');
+  assert.equal(capsuleReset(first(40), second(40)), '2d 0h');
+  assert.equal(capsuleReset(first(0), second(0)), '2d 0h');
+});
+
+test('a capsule falls back to the other limit when the chosen one has no usable reset', t => {
+  const now = new Date(2030, 10, 19, 12, 0).getTime();
+  t.mock.method(Date, 'now', () => now);
+  const usable = (used, left) => ({ used, resets_at: new Date(now + left).toISOString() });
+  assert.equal(capsuleReset({ used: 60, resets_at: 'later' }, usable(20, DAY)), '1d 0h', 'the first is chosen but unusable');
+  assert.equal(capsuleReset(usable(20, H), { used: 60 }), '1h 0m', 'the second is chosen but unusable');
+  assert.equal(capsuleReset(usable(40, H), { used: 40, resets_at: null }), '1h 0m', 'a tie with no time on the second');
+  assert.equal(capsuleReset(usable(60, -H), usable(20, DAY)), '1d 0h', 'a reset already past is unusable');
+});
+
+test('a capsule shows no reset when neither limit has a usable one', t => {
+  const now = new Date(2030, 10, 19, 12, 0).getTime();
+  t.mock.method(Date, 'now', () => now);
+  assert.equal(capsuleReset({ used: 60, resets_at: 'later' }, { used: 20 }), '');
+  assert.equal(capsuleReset({ used: 20, resets_at: new Date(now - H).toISOString() }, { used: 60, resets_at: new Date(now).toISOString() }), '');
+});
+
+test('a capsule with one limit shows that limit\'s reset, and one with none shows nothing', t => {
+  const now = new Date(2030, 10, 19, 12, 0).getTime();
+  t.mock.method(Date, 'now', () => now);
+  assert.equal(capsuleReset({ used: 10, resets_at: new Date(now + 42 * M).toISOString() }), '42m');
+  assert.equal(capsuleReset({ used: 10, resets_at: 'later' }), '');
+  assert.equal(capsuleReset(), '');
 });
 
 test('times read in 12-hour form', () => {
