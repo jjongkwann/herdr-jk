@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import vm from 'node:vm';
+import * as firstAgent from '../mods/omarchy-tabs/first-agent.js';
 import { assistantLabels, assistantWords, attemptOf, claimAdoption, CLAIM, deliver, firstAgents, FRESH_MS, isHome, noteStarts, sendFailure, sendRequest, SEND_MS, startsFresh, stillFresh } from '../mods/omarchy-tabs/first-agent.js';
 
 const space = { id: 'sp1', machine: null, tabs: [{ id: 'tb1' }, { id: 'tb2' }] };
@@ -207,4 +210,68 @@ test('a send only counts when hc answers with a result', () => {
   assert.equal(sendFailure({ code: 1, stdout: '', stderr: 'boom\n' }), 'boom');
   assert.equal(sendFailure({ code: 3, stdout: '', stderr: '' }), 'hc connect exited with 3');
   assert.equal(sendFailure({ code: 0, stdout: '', stderr: '' }), 'hc connect exited with 0');
+});
+
+// The tab bar's main.js on a fake Herdr: one space, one tab, one terminal that goes from its prompt to a new agent.
+function tabBar(answer) {
+  const labels = { 'herdr.space': 'sp1' }, log = [], notes = [], traces = [], files = new Map();
+  let terminal = shell();
+  const self = new Proxy(function () {}, { get: (_t, prop) => (prop === 'when' ? (on, f) => (on ? f(self) : self) : () => self) });
+  const record = () => ({ state: 'live', parent: null, template: null, turn: 230, status: { app: 'claude-code', state: 'idle' }, status_ms: Date.now(), cwd: 'C:\\work', foreground: { argv: ['claude.exe'], cwd: 'C:\\work' }, labels });
+  const context = {
+    ...firstAgent, console: { log: (line) => traces.push(line) },
+    View: class {}, div: () => self, h_flex: () => self, svg: () => self, image: () => self,
+    localStorage: { getItem: () => null, setItem() {} },
+    spaces: () => [{ id: 'sp1', active: true, machine: null, branch: null, tabs: [{ id: 'tb1', index: 1, name: 'work', named: true, active: true, status: 'idle' }] }],
+    panes: () => [{ pane: 'p1', tab: 'tb1', terminal: 't8', status: 'idle', program: { key: 'claude' }, title: 'x', cwd: 'C:\\work' }],
+    terminals: () => [terminal], focused: () => null, props: () => ({}), settings: () => ({ zoom: 1 }),
+    run: (name, args) => log.push(`${name} ${args.name ?? args.index}`), openOverlay() {}, notify: (n) => notes.push(n), shared: () => undefined, setShared() {},
+    theme: () => new Proxy({}, { get: () => '#888888' }), layout: () => ({ id: 'root', children: [{ id: 'tabs' }] }),
+    hc: async ([verb, , ...pairs]) => {
+      if (verb === 'get') return { code: 0, stdout: JSON.stringify(record()), stderr: '' };
+      for (const pair of pairs) { const [k, v] = pair.split('='); if (v) labels[k] = v; else delete labels[k]; log.push(`label ${k}${v ? '' : ' removed'}`); }
+      return { code: 0, stdout: '', stderr: '' };
+    },
+    exec: async (command, args = []) => {
+      if (!String(args[1]).includes('hc connect')) return { code: 0, stdout: '', stderr: '' };
+      log.push('send');
+      return { ...answer(), sent: files.get(args.at(-1)) };
+    },
+    readTextFile: async () => '---\nname: assistant\n---\nYou are the coordinator.\n',
+    writeTextFile: async (path, text) => { files.set(path, text); log.push(`file ${JSON.parse(text).params.text}`); return null; },
+    home: () => 'C:\\Users\\me', appHome: () => 'C:\\app', nextCommand: () => new Promise(() => {}),
+    syncNames() {}, renderPaneHeader() {}, chatAgents: () => [], spacesWithChats: (s) => s, resumeCommand() {}, argvOf() {},
+    coordinatorTab: () => null, openCoordinator() {}, jump: () => null,
+    PaneHistory: class { see() { return false; } }, placeOf: () => null, SETTLE: 0,
+    tabWidths: () => ({ tab: 100, active: 100 }), TAB_ICONS: 120, NEW_TAB: 36,
+  };
+  const code = readFileSync(new URL('../mods/omarchy-tabs/main.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace('export default class Tabs', 'globalThis.Tabs = class Tabs');
+  vm.runInNewContext(code, context);
+  const cx = { notify() {}, spawn() {}, stop_propagation() {}, timer: { every() {}, after() {} } };
+  const bar = new context.Tabs();
+  bar.init({}, cx);
+  return { labels, log, notes, traces, show: (k) => { terminal = k; bar.render(cx); } };
+}
+const settled = async (done) => { for (let i = 0; i < 200 && !done(); i++) await new Promise((r) => setTimeout(r, 5)); };
+
+test('on the fake host, a plain claude at a used prompt becomes the Assistant', async () => {
+  const bar = tabBar(() => ({ code: 0, stdout: '{"id":1,"result":{}}\n', stderr: '' }));
+  bar.show(shell());
+  bar.show(claude({ program: { key: 'claude' } }));
+  await settled(() => bar.log.includes('tab.move 1'));
+  assert.deepEqual(bar.log, [`label ${CLAIM}`, 'file You are the coordinator.', 'send', 'label herdr.role', 'label herdr.coordinator.space', 'label herdr.coordinator.tab', `label ${CLAIM} removed`, 'tab.rename Assistant', 'tab.move 1']);
+  assert.equal(bar.labels['herdr.role'], 'coordinator');
+  assert.deepEqual(bar.notes, []);
+});
+
+test('on the fake host, a failed adoption tells the person and leaves a plain agent', async () => {
+  const bar = tabBar(() => ({ code: 1, stdout: '', stderr: 'no connection' }));
+  bar.show(shell());
+  bar.show(claude({ program: { key: 'claude' } }));
+  await settled(() => bar.notes.length > 0);
+  assert.equal(bar.notes[0].level, 'error');
+  assert.match(bar.notes[0].body, /no connection/);
+  assert.match(bar.traces[0], /t8.*no connection/);
+  assert.equal(bar.labels['herdr.role'], undefined);
+  assert.equal(bar.labels[CLAIM], undefined);
 });
