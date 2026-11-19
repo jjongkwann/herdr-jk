@@ -1,6 +1,6 @@
 Subject: Tasks: an agy worker gets its brief after -i (agy refuses a bare prompt), and its model, effort and permission flags
 Owner: shepherdr
-Versions: >=3.1.41
+Versions: >=3.1.44
 
 diff --git a/mods/tasks/bin/herdr_task/launch.py b/mods/tasks/bin/herdr_task/launch.py
 index 201a2d6..eb62963 100644
@@ -17,10 +17,10 @@ index 201a2d6..eb62963 100644
                "--label", f"herdr.agent={agent_key(argv)}"]
      ctab = coordinator_tab(parent)
 diff --git a/mods/tasks/bin/herdr_task/settings.py b/mods/tasks/bin/herdr_task/settings.py
-index 294810f..904b9b3 100644
+index 85a575c..3d08943 100644
 --- a/mods/tasks/bin/herdr_task/settings.py
 +++ b/mods/tasks/bin/herdr_task/settings.py
-@@ -196,9 +196,26 @@ def argv_for(pick):
+@@ -197,9 +197,26 @@ def argv_for(pick):
          elif perm:
              a += ["-s", "workspace-write", "-a", "on-request"]
          return a
