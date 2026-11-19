@@ -455,27 +455,6 @@ test('in the top bar only the meters open the popup, so the rest of the block dr
   assert.equal(overlays[0].props.below, true);
 });
 
-test('the top bar reset reads a local date from a day away and the time left under that', t => {
-  const now = new Date(2030, 10, 19, 12, 0).getTime();
-  t.mock.method(Date, 'now', () => now);
-  const at = ms => ({ resets_at: new Date(ms).toISOString() });
-  assert.equal(resetsCompact(at(new Date(2030, 10, 21, 0, 30).getTime())), '11/21');
-  assert.equal(resetsCompact(at(new Date(2031, 0, 5, 23, 59).getTime())), '1/5');
-  assert.equal(resetsCompact(at(now + 2 * H + 10 * 60e3)), '2h10m');
-  // The API reports resets a fraction of a second before the minute.
-  assert.equal(resetsCompact(at(now + 2 * H + 10 * 60e3 - 500)), '2h10m');
-  assert.equal(resetsCompact(at(now + DAY)), '11/20', 'exactly a day away is a date');
-  assert.equal(resetsCompact(at(now + DAY - 60e3)), '23h59m', 'a minute under a day is the time left');
-});
-
-test('the top bar shows no reset for a resets_at it cannot use', t => {
-  const now = new Date(2030, 10, 19, 12, 0).getTime();
-  t.mock.method(Date, 'now', () => now);
-  for (const resets_at of ['later', 'next week', '', null, undefined]) assert.equal(resetsCompact({ resets_at }), '');
-  assert.equal(resetsCompact({}), '');
-  assert.equal(resetsCompact({ resets_at: new Date(now - H).toISOString() }), '', 'a reset already past says nothing');
-});
-
 // The compact bar for one Codex capsule. `strings(id)` lists a row's texts in order, `color(text)` says how one is drawn.
 function compactBar(windows, fetched) {
   const h = usageHarness({}, {}, 200, '/home/test', {}, {
@@ -502,12 +481,12 @@ test('each limit in the top bar shows its reset after its percent, even far belo
   t.mock.method(Date, 'now', () => now);
   const windows = [
     { short: '5h', used: 12, resets_at: new Date(now + 2 * H + 10 * 60e3).toISOString() },
-    { short: '7d', used: 30, resets_at: new Date(2030, 10, 21, 9, 0).toISOString() },
+    { short: '7d', used: 30, resets_at: new Date(now + 2 * DAY + 5 * H).toISOString() },
   ];
   const bar = compactBar(windows, new Date(now).toISOString());
-  assert.deepEqual(bar.strings('usage'), ['5h', '12%', '↻ 2h10m', '7d', '30%', '↻ 11/21']);
-  assert.equal(bar.color('↻ 11/21'), 'muted');
-  assert.equal(compactBar(windows, new Date(now - DAY).toISOString()).color('↻ 11/21'), 'dim', 'stale data dims it with the rest');
+  assert.deepEqual(bar.strings('usage'), ['5h', '12%', '↻ 2h 10m', '7d', '30%', '↻ 2d 5h']);
+  assert.equal(bar.color('↻ 2d 5h'), 'muted');
+  assert.equal(compactBar(windows, new Date(now - DAY).toISOString()).color('↻ 2d 5h'), 'dim', 'stale data dims it with the rest');
 });
 
 test('a limit without a usable reset leaves no stray mark in the top bar', t => {
@@ -515,9 +494,9 @@ test('a limit without a usable reset leaves no stray mark in the top bar', t => 
   t.mock.method(Date, 'now', () => now);
   const bar = compactBar([
     { short: '5h', used: 12, resets_at: 'later' },
-    { short: '7d', used: 30, resets_at: new Date(2030, 10, 21, 9, 0).toISOString() },
+    { short: '7d', used: 30, resets_at: new Date(now + 2 * DAY + 5 * H).toISOString() },
   ], new Date(now).toISOString());
-  assert.deepEqual(bar.strings('usage'), ['5h', '12%', '7d', '30%', '↻ 11/21']);
+  assert.deepEqual(bar.strings('usage'), ['5h', '12%', '7d', '30%', '↻ 2d 5h']);
 });
 
 test('short of room the top bar drops every reset and keeps the percents', t => {
@@ -525,17 +504,17 @@ test('short of room the top bar drops every reset and keeps the percents', t => 
   t.mock.method(Date, 'now', () => now);
   const { view, strings } = compactBar([
     { short: '5h', used: 12, resets_at: new Date(now + 2 * H).toISOString() },
-    { short: '7d', used: 30, resets_at: new Date(2030, 10, 21, 9, 0).toISOString() },
+    { short: '7d', used: 30, resets_at: new Date(now + 2 * DAY + 5 * H).toISOString() },
   ], new Date(now).toISOString());
   let redraws = 0;
   const cx = { notify() { redraws++; } };
   view.measure('fullWidth')({ width: 300, height: 22 }, cx);
   view.measure('blockWidth')({ width: 320, height: 32 }, cx);
   assert.equal(redraws, 2);
-  assert.deepEqual(strings('usage'), ['5h', '12%', '↻ 2h0m', '7d', '30%', '↻ 11/21'], 'exactly enough room keeps them');
+  assert.deepEqual(strings('usage'), ['5h', '12%', '↻ 2h 0m', '7d', '30%', '↻ 2d 5h'], 'exactly enough room keeps them');
   view.measure('blockWidth')({ width: 319, height: 32 }, cx);
   assert.deepEqual(strings('usage'), ['5h', '12%', '7d', '30%']);
-  assert.deepEqual(strings('usage-full'), ['5h', '12%', '↻ 2h0m', '7d', '30%', '↻ 11/21'], 'the unseen copy still measures them');
+  assert.deepEqual(strings('usage-full'), ['5h', '12%', '↻ 2h 0m', '7d', '30%', '↻ 2d 5h'], 'the unseen copy still measures them');
   view.measure('blockWidth')({ width: 319, height: 32 }, cx);
   assert.equal(redraws, 3, 'an unchanged width does not redraw');
 });
