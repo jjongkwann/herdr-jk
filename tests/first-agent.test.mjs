@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { assistantLabels, assistantWords, firstAgents, FRESH_MS, isHome, startsFresh, stillFresh } from '../mods/omarchy-tabs/first-agent.js';
+import vm from 'node:vm';
+import * as firstAgent from '../mods/omarchy-tabs/first-agent.js';
+import { assistantLabels, assistantWords, attemptOf, claimAdoption, CLAIM, deliver, firstAgents, FRESH_MS, isHome, noteStarts, sendFailure, sendRequest, SEND_MS, startsFresh, stillFresh } from '../mods/omarchy-tabs/first-agent.js';
 
 const space = { id: 'sp1', machine: null, tabs: [{ id: 'tb1' }, { id: 'tb2' }] };
 const agent = (address, extra = {}) => ({ address, state: 'live', status: 'idle', turn: 0, program: { key: 'claude' }, labels: { 'herdr.space': 'sp1' }, ...extra });
@@ -73,4 +76,202 @@ test('an agent opened in a home folder stays a plain agent', () => {
 test("the template's header is not part of its words", () => {
   assert.equal(assistantWords('---\nname: assistant\ncommand: claude\n---\nYou are the coordinator.\n'), 'You are the coordinator.');
   assert.equal(assistantWords(null), '');
+});
+
+// A used terminal (turn 230) as the tab bar sees it over time.
+const shell = (extra = {}) => ({ address: 't8', state: 'live', status: null, turn: 230, agent: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', program: { key: 'shell', shell: true }, labels: { 'herdr.space': 'sp1' }, ...extra });
+const claude = (extra = {}) => agent('t8', { turn: 230, ...extra });
+const watch = (...looks) => { const starts = new Map(); for (const k of looks) noteStarts(starts, [k]); return starts; };
+const adoptable = (k, starts) => firstAgents({ spaces: [space], terminals: [k], panes: [pane(k.address)], starts }).map((x) => x.address);
+
+test('an agent started at the prompt of a used terminal is a candidate', () => {
+  const starts = watch(shell(), claude({ status: null }), claude());
+  assert.equal(starts.get('t8').turn, 230);
+  assert.deepEqual(adoptable(claude(), starts), ['t8']);
+  const now = 1_000_000_000;
+  const k = { state: 'live', turn: 230, status: { state: 'idle' }, status_ms: now, foreground: { argv: ['claude.exe'] } };
+  assert.equal(stillFresh(k, now, starts.get('t8').turn), true);
+  assert.equal(stillFresh(k, now), false);
+});
+
+test('an agent in a used terminal stops being a candidate at its first turn', () => {
+  const starts = watch(shell(), claude(), claude({ status: 'working' }), claude({ turn: 231 }));
+  assert.deepEqual(adoptable(claude({ turn: 231 }), starts), []);
+  const now = 1_000_000_000;
+  assert.equal(stillFresh({ state: 'live', turn: 231, status: { state: 'idle' }, status_ms: now, foreground: { argv: ['claude'] } }, now, starts.get('t8').turn), false);
+});
+
+test('claude -c, its exit, then a plain claude in one terminal: the plain one gets its own try', () => {
+  const starts = new Map();
+  noteStarts(starts, [shell()], 1);
+  noteStarts(starts, [claude()], 2);
+  const resumed = attemptOf('t8', starts);
+  noteStarts(starts, [shell()], 3);
+  assert.deepEqual(adoptable(claude(), starts), [], 'nothing to adopt at the prompt');
+  assert.equal(attemptOf('t8', starts), 't8@0');
+  noteStarts(starts, [claude()], 4);
+  assert.notEqual(attemptOf('t8', starts), resumed);
+  assert.deepEqual(adoptable(claude(), starts), ['t8']);
+});
+
+test('the prompt counts even while Herdr still names the agent that just left', () => {
+  const stale = shell({ program: { key: 'claude' } });
+  const starts = watch(stale, claude());
+  assert.equal(starts.get('t8').turn, 230);
+  // and that shell is not a second agent in its space
+  const other = agent('t9', { turn: 5, status: null, agent: 'pwsh.exe' });
+  assert.deepEqual(firstAgents({ spaces: [space], terminals: [claude(), other], panes: [pane('t8'), pane('t9')], starts }).map((x) => x.address), ['t8']);
+});
+
+test("hc's own name for a running agent is enough when Herdr gives no program", () => {
+  const k = claude({ program: null, agent: 'claude-code' });
+  assert.deepEqual(adoptable(k, watch(shell(), k)), ['t8']);
+});
+
+test('two windows racing for one agent: only the last claim goes on', async () => {
+  const labels = {};
+  const hc = async ([verb, , pair]) => {
+    if (verb === 'label') { const [k, v] = pair.split('='); labels[k] = v; return { code: 0, stdout: '', stderr: '' }; }
+    return { code: 0, stdout: JSON.stringify({ labels }), stderr: '' };
+  };
+  let release;
+  const both = new Promise((r) => { release = r; });
+  let waiting = 0;
+  const exec = async () => { if (++waiting === 2) release(); await both; return { code: 0, stdout: '', stderr: '' }; };
+  const results = await Promise.all([claimAdoption({ hc, exec }, 't8', 'mac'), claimAdoption({ hc, exec }, 't8', 'pc')]);
+  assert.equal(results.filter(Boolean).length, 1);
+  assert.equal(results[1].labels[CLAIM], 'pc');
+});
+
+test('an agent not seen starting at a prompt is left alone', () => {
+  assert.deepEqual(adoptable(claude(), watch(claude())), []);
+  // its report went missing for a moment, with the agent still in front: not a new start
+  assert.deepEqual(adoptable(claude(), watch(claude(), claude({ status: null }), claude())), []);
+  // straight from one agent's report to another's, with no prompt seen between them
+  assert.deepEqual(adoptable(claude(), watch(claude({ status: 'done' }), claude())), []);
+});
+
+test('the rules for a resumed agent and a home folder hold in a used terminal', () => {
+  const now = 1_000_000_000, start = 230;
+  const k = { state: 'live', turn: 230, status: { state: 'idle' }, status_ms: now, foreground: { argv: ['claude'], cwd: '/Users/me/work' } };
+  assert.equal(stillFresh(k, now, start), true);
+  assert.equal(stillFresh({ ...k, foreground: { argv: ['claude', '--resume', 'x'], cwd: '/Users/me/work' } }, now, start), false);
+  assert.equal(stillFresh({ ...k, foreground: { argv: ['claude'], cwd: '/Users/me' } }, now, start), false);
+  for (const extra of [{ parent: 't0' }, { labels: { 'herdr.task': 'repo#1' } }, { labels: { 'herdr.role': 'reviewer' } }]) {
+    assert.deepEqual(adoptable(claude(extra), watch(shell(), claude(extra))), []);
+  }
+  const assistant = agent('t0', { labels: { 'herdr.role': 'coordinator', 'herdr.coordinator.space': 'sp1' } });
+  const starts = watch(shell(), claude());
+  assert.deepEqual(firstAgents({ spaces: [space], terminals: [assistant, claude()], panes: [pane('t8')], starts }).map((x) => x.address), []);
+});
+
+// herdr's exec and writeTextFile, recording what they were given.
+function fakeHerdr(answer) {
+  const files = new Map(), calls = [];
+  return {
+    files, calls,
+    appHome: () => 'C:\\Users\\me\\.config\\herdr-app',
+    writeTextFile: async (path, text, expected) => { assert.equal(expected, null); files.set(path, text); return null; },
+    exec: async (command, args, options) => {
+      calls.push({ command, args, options, sent: files.get(args.at(-1)) });
+      if (args[1].includes('rm -f')) { files.delete(args.at(-1)); return { code: 0, stdout: '', stderr: '' }; }
+      return answer();
+    },
+  };
+}
+
+test('the first message goes through a file, whatever its length, and the file is removed', async () => {
+  const io = fakeHerdr(() => ({ code: 0, stdout: '{"jsonrpc":"2.0","id":1,"result":{}}\n', stderr: '' }));
+  const words = '가'.repeat(40000);
+  await deliver(io, 'win-pc/t8', words);
+  const [send, clean] = io.calls;
+  assert.equal(send.command, 'sh');
+  assert.ok(send.args.every((a) => a.length < 1000), 'nothing long on the command line');
+  assert.equal(send.sent, sendRequest('win-pc/t8', words));
+  assert.equal(JSON.parse(send.sent).params.text, words);
+  assert.ok(send.sent.endsWith('\n'));
+  assert.equal(send.options.timeout, SEND_MS);
+  assert.ok(clean.args[1].includes('rm -f'));
+  assert.equal(clean.args.at(-1), send.args.at(-1));
+  assert.equal(io.files.size, 0);
+});
+
+test('a failed send says why and still removes the file', async () => {
+  const refused = fakeHerdr(() => ({ code: 0, stdout: '{"jsonrpc":"2.0","id":1,"error":{"message":"no such terminal"}}\n', stderr: '' }));
+  await assert.rejects(deliver(refused, 't8', 'hi'), /no such terminal/);
+  assert.equal(refused.files.size, 0);
+  const crashed = fakeHerdr(() => { throw new Error('timed out'); });
+  await assert.rejects(deliver(crashed, 't8', 'hi'), /timed out/);
+  assert.equal(crashed.files.size, 0);
+});
+
+test('a send only counts when hc answers with a result', () => {
+  assert.equal(sendFailure({ code: 0, stdout: '{"result":{}}', stderr: '' }), null);
+  assert.equal(sendFailure({ code: 1, stdout: '', stderr: 'boom\n' }), 'boom');
+  assert.equal(sendFailure({ code: 3, stdout: '', stderr: '' }), 'hc connect exited with 3');
+  assert.equal(sendFailure({ code: 0, stdout: '', stderr: '' }), 'hc connect exited with 0');
+});
+
+// The tab bar's main.js on a fake Herdr: one space, one tab, one terminal that goes from its prompt to a new agent.
+function tabBar(answer) {
+  const labels = { 'herdr.space': 'sp1' }, log = [], notes = [], traces = [], files = new Map();
+  let terminal = shell();
+  const self = new Proxy(function () {}, { get: (_t, prop) => (prop === 'when' ? (on, f) => (on ? f(self) : self) : () => self) });
+  const record = () => ({ state: 'live', parent: null, template: null, turn: 230, status: { app: 'claude-code', state: 'idle' }, status_ms: Date.now(), cwd: 'C:\\work', foreground: { argv: ['claude.exe'], cwd: 'C:\\work' }, labels });
+  const context = {
+    ...firstAgent, console: { log: (line) => traces.push(line) },
+    View: class {}, div: () => self, h_flex: () => self, svg: () => self, image: () => self,
+    localStorage: { getItem: () => null, setItem() {} },
+    spaces: () => [{ id: 'sp1', active: true, machine: null, branch: null, tabs: [{ id: 'tb1', index: 1, name: 'work', named: true, active: true, status: 'idle' }] }],
+    panes: () => [{ pane: 'p1', tab: 'tb1', terminal: 't8', status: 'idle', program: { key: 'claude' }, title: 'x', cwd: 'C:\\work' }],
+    terminals: () => [terminal], focused: () => null, props: () => ({}), settings: () => ({ zoom: 1 }),
+    run: (name, args) => log.push(`${name} ${args.name ?? args.index}`), openOverlay() {}, notify: (n) => notes.push(n), shared: () => undefined, setShared() {},
+    theme: () => new Proxy({}, { get: () => '#888888' }), layout: () => ({ id: 'root', children: [{ id: 'tabs' }] }),
+    hc: async ([verb, , ...pairs]) => {
+      if (verb === 'get') return { code: 0, stdout: JSON.stringify(record()), stderr: '' };
+      for (const pair of pairs) { const [k, v] = pair.split('='); if (v) labels[k] = v; else delete labels[k]; log.push(`label ${k}${v ? '' : ' removed'}`); }
+      return { code: 0, stdout: '', stderr: '' };
+    },
+    exec: async (command, args = []) => {
+      if (!String(args[1]).includes('hc connect')) return { code: 0, stdout: '', stderr: '' };
+      log.push('send');
+      return { ...answer(), sent: files.get(args.at(-1)) };
+    },
+    readTextFile: async () => '---\nname: assistant\n---\nYou are the coordinator.\n',
+    writeTextFile: async (path, text) => { files.set(path, text); log.push(`file ${JSON.parse(text).params.text}`); return null; },
+    home: () => 'C:\\Users\\me', appHome: () => 'C:\\app', nextCommand: () => new Promise(() => {}),
+    syncNames() {}, renderPaneHeader() {}, chatAgents: () => [], spacesWithChats: (s) => s, resumeCommand() {}, argvOf() {},
+    coordinatorTab: () => null, openCoordinator() {}, jump: () => null,
+    PaneHistory: class { see() { return false; } }, placeOf: () => null, SETTLE: 0,
+    tabWidths: () => ({ tab: 100, active: 100 }), TAB_ICONS: 120, NEW_TAB: 36,
+  };
+  const code = readFileSync(new URL('../mods/omarchy-tabs/main.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace('export default class Tabs', 'globalThis.Tabs = class Tabs');
+  vm.runInNewContext(code, context);
+  const cx = { notify() {}, spawn() {}, stop_propagation() {}, timer: { every() {}, after() {} } };
+  const bar = new context.Tabs();
+  bar.init({}, cx);
+  return { labels, log, notes, traces, show: (k) => { terminal = k; bar.render(cx); } };
+}
+const settled = async (done) => { for (let i = 0; i < 200 && !done(); i++) await new Promise((r) => setTimeout(r, 5)); };
+
+test('on the fake host, a plain claude at a used prompt becomes the Assistant', async () => {
+  const bar = tabBar(() => ({ code: 0, stdout: '{"id":1,"result":{}}\n', stderr: '' }));
+  bar.show(shell());
+  bar.show(claude({ program: { key: 'claude' } }));
+  await settled(() => bar.log.includes('tab.move 1'));
+  assert.deepEqual(bar.log, [`label ${CLAIM}`, 'file You are the coordinator.', 'send', 'label herdr.role', 'label herdr.coordinator.space', 'label herdr.coordinator.tab', `label ${CLAIM} removed`, 'tab.rename Assistant', 'tab.move 1']);
+  assert.equal(bar.labels['herdr.role'], 'coordinator');
+  assert.deepEqual(bar.notes, []);
+});
+
+test('on the fake host, a failed adoption tells the person and leaves a plain agent', async () => {
+  const bar = tabBar(() => ({ code: 1, stdout: '', stderr: 'no connection' }));
+  bar.show(shell());
+  bar.show(claude({ program: { key: 'claude' } }));
+  await settled(() => bar.notes.length > 0);
+  assert.equal(bar.notes[0].level, 'error');
+  assert.match(bar.notes[0].body, /no connection/);
+  assert.match(bar.traces[0], /t8.*no connection/);
+  assert.equal(bar.labels['herdr.role'], undefined);
+  assert.equal(bar.labels[CLAIM], undefined);
 });

@@ -87,7 +87,7 @@ test("the strip measures itself and sizes its tabs from it", () => {
     theme: () => new Proxy({}, { get: () => "#888888" }), layout: () => ({ id: "root", children: [{ id: "tabs" }] }),
     exec: async () => ({ code: 1 }), readTextFile: async () => null, home: () => "/Users/me", appHome: () => "/app", nextCommand: () => new Promise(() => {}),
     syncNames() {}, renderPaneHeader() {}, chatAgents: () => [], spacesWithChats: s => s, resumeCommand() {}, argvOf() {},
-    coordinatorTab: () => null, openCoordinator() {}, firstAgents: () => [], jump: () => null,
+    coordinatorTab: () => null, openCoordinator() {}, firstAgents: () => [], noteStarts() {}, attemptOf: () => "", jump: () => null,
     PaneHistory: class { see() { return false; } }, placeOf: () => null, SETTLE: 0,
     tabWidths, TAB_ICONS: 120, NEW_TAB: 36,
   };
