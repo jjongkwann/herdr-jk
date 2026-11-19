@@ -306,7 +306,7 @@ export default class Tabs extends View {
       // The status word lives in the tooltip; the tab keeps only its dot or spinner.
       // A cell of the measured width holds a pill, so the pills keep a gap without changing the sums in sizing.js.
       return h_flex().id(`tab-${c.id}`).w(c.active ? tabA : tabW).h_full().px(2).items_center().flex_none()
-        .tooltip([name, detail].filter(Boolean).join("\n"))
+        .tooltip([name, detail, tabPanes.map(p => p.terminal).filter(Boolean).join(", ")].filter(Boolean).join("\n"))
         // The close button shows on the active tab and on the one under the pointer.
         .on_hover((over, cx) => { if (over) this.overTab = c.id; else if (this.overTab === c.id) this.overTab = null; cx.notify(); })
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); })

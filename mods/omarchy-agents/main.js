@@ -199,6 +199,7 @@ export default class Agents extends View {
     const on = k.address === shown;
     return h_flex()
       .id(`sub-${k.address}`)
+      .tooltip(k.address)
       .pl(24)
       .pr(8)
       .rounded(6)
@@ -383,7 +384,7 @@ export default class Agents extends View {
           .border(1)
           .text_size(11)
           .font_bold()
-          .tooltip([label(a), more, machine].filter(Boolean).join(" \u00b7 "))
+          .tooltip([label(a), more, a.address].filter(Boolean).join(" \u00b7 "))
           .when(a.focused, (el) => el.bg(t.foreground + "2e").border_color(t.foreground + "40"))
           .when(!a.focused, (el) => el.border_color(t.border).hover((s) => s.bg(t.foreground + "14").border_color(t.foreground + "40")))
           .on_click(() => run("pane.focus", { pane: a.pane }))
@@ -429,6 +430,7 @@ export default class Agents extends View {
       const stripe = needsYou ? t.blocked : a.focused ? t.accent : null;
       return h_flex()
         .id(`ag-${a.address}`)
+        .tooltip([name, also !== name ? also : null, a.address].filter(Boolean).join(" · "))
         .relative()
         .px(squeezed ? 6 : 8)
         .h(tall ? 44 : 26)
