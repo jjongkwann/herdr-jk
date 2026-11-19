@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assistantLabels, assistantWords, deliver, firstAgents, FRESH_MS, isHome, noteStarts, sendFailure, sendRequest, SEND_MS, startsFresh, stillFresh } from '../mods/omarchy-tabs/first-agent.js';
+import { assistantLabels, assistantWords, attemptOf, claimAdoption, CLAIM, deliver, firstAgents, FRESH_MS, isHome, noteStarts, sendFailure, sendRequest, SEND_MS, startsFresh, stillFresh } from '../mods/omarchy-tabs/first-agent.js';
 
 const space = { id: 'sp1', machine: null, tabs: [{ id: 'tb1' }, { id: 'tb2' }] };
 const agent = (address, extra = {}) => ({ address, state: 'live', status: 'idle', turn: 0, program: { key: 'claude' }, labels: { 'herdr.space': 'sp1' }, ...extra });
@@ -76,18 +76,18 @@ test("the template's header is not part of its words", () => {
 });
 
 // A used terminal (turn 230) as the tab bar sees it over time.
-const shell = (extra = {}) => ({ address: 't8', state: 'live', status: null, turn: 230, program: { key: 'shell' }, labels: { 'herdr.space': 'sp1' }, ...extra });
+const shell = (extra = {}) => ({ address: 't8', state: 'live', status: null, turn: 230, agent: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', program: { key: 'shell', shell: true }, labels: { 'herdr.space': 'sp1' }, ...extra });
 const claude = (extra = {}) => agent('t8', { turn: 230, ...extra });
 const watch = (...looks) => { const starts = new Map(); for (const k of looks) noteStarts(starts, [k]); return starts; };
 const adoptable = (k, starts) => firstAgents({ spaces: [space], terminals: [k], panes: [pane(k.address)], starts }).map((x) => x.address);
 
 test('an agent started at the prompt of a used terminal is a candidate', () => {
   const starts = watch(shell(), claude({ status: null }), claude());
-  assert.equal(starts.get('t8'), 230);
+  assert.equal(starts.get('t8').turn, 230);
   assert.deepEqual(adoptable(claude(), starts), ['t8']);
   const now = 1_000_000_000;
   const k = { state: 'live', turn: 230, status: { state: 'idle' }, status_ms: now, foreground: { argv: ['claude.exe'] } };
-  assert.equal(stillFresh(k, now, starts.get('t8')), true);
+  assert.equal(stillFresh(k, now, starts.get('t8').turn), true);
   assert.equal(stillFresh(k, now), false);
 });
 
@@ -95,7 +95,49 @@ test('an agent in a used terminal stops being a candidate at its first turn', ()
   const starts = watch(shell(), claude(), claude({ status: 'working' }), claude({ turn: 231 }));
   assert.deepEqual(adoptable(claude({ turn: 231 }), starts), []);
   const now = 1_000_000_000;
-  assert.equal(stillFresh({ state: 'live', turn: 231, status: { state: 'idle' }, status_ms: now, foreground: { argv: ['claude'] } }, now, starts.get('t8')), false);
+  assert.equal(stillFresh({ state: 'live', turn: 231, status: { state: 'idle' }, status_ms: now, foreground: { argv: ['claude'] } }, now, starts.get('t8').turn), false);
+});
+
+test('claude -c, its exit, then a plain claude in one terminal: the plain one gets its own try', () => {
+  const starts = new Map();
+  noteStarts(starts, [shell()], 1);
+  noteStarts(starts, [claude()], 2);
+  const resumed = attemptOf('t8', starts);
+  noteStarts(starts, [shell()], 3);
+  assert.deepEqual(adoptable(claude(), starts), [], 'nothing to adopt at the prompt');
+  assert.equal(attemptOf('t8', starts), 't8@0');
+  noteStarts(starts, [claude()], 4);
+  assert.notEqual(attemptOf('t8', starts), resumed);
+  assert.deepEqual(adoptable(claude(), starts), ['t8']);
+});
+
+test('the prompt counts even while Herdr still names the agent that just left', () => {
+  const stale = shell({ program: { key: 'claude' } });
+  const starts = watch(stale, claude());
+  assert.equal(starts.get('t8').turn, 230);
+  // and that shell is not a second agent in its space
+  const other = agent('t9', { turn: 5, status: null, agent: 'pwsh.exe' });
+  assert.deepEqual(firstAgents({ spaces: [space], terminals: [claude(), other], panes: [pane('t8'), pane('t9')], starts }).map((x) => x.address), ['t8']);
+});
+
+test("hc's own name for a running agent is enough when Herdr gives no program", () => {
+  const k = claude({ program: null, agent: 'claude-code' });
+  assert.deepEqual(adoptable(k, watch(shell(), k)), ['t8']);
+});
+
+test('two windows racing for one agent: only the last claim goes on', async () => {
+  const labels = {};
+  const hc = async ([verb, , pair]) => {
+    if (verb === 'label') { const [k, v] = pair.split('='); labels[k] = v; return { code: 0, stdout: '', stderr: '' }; }
+    return { code: 0, stdout: JSON.stringify({ labels }), stderr: '' };
+  };
+  let release;
+  const both = new Promise((r) => { release = r; });
+  let waiting = 0;
+  const exec = async () => { if (++waiting === 2) release(); await both; return { code: 0, stdout: '', stderr: '' }; };
+  const results = await Promise.all([claimAdoption({ hc, exec }, 't8', 'mac'), claimAdoption({ hc, exec }, 't8', 'pc')]);
+  assert.equal(results.filter(Boolean).length, 1);
+  assert.equal(results[1].labels[CLAIM], 'pc');
 });
 
 test('an agent not seen starting at a prompt is left alone', () => {

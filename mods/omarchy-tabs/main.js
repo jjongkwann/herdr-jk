@@ -7,7 +7,7 @@ import { spaces, panes, terminals, props, run, openOverlay, theme, shared, setSh
 import { chatAgents, spacesWithChats } from "./parked.js";
 import { resumeCommand, argvOf } from "./reopen.js";
 import { coordinatorTab, openCoordinator } from "./coordinator.js";
-import { firstAgents, noteStarts, stillFresh, assistantWords, assistantLabels, deliver } from "./first-agent.js";
+import { firstAgents, noteStarts, attemptOf, stillFresh, assistantWords, assistantLabels, deliver, claimAdoption, CLAIM } from "./first-agent.js";
 import { jump } from "./jump.js";
 import { PaneHistory, placeOf, SETTLE } from "./history.js";
 import { tabWidths, TAB_ICONS, NEW_TAB } from "./sizing.js";
@@ -34,12 +34,20 @@ const starts = new Map();
 async function adoptAssistant({ space, address, tab }) {
   const got = await hc(["get", address]);
   if (got.code !== 0) throw new Error(got.stderr.trim() || `hc get ${address} failed`);
-  if (!stillFresh(JSON.parse(got.stdout), Date.now(), starts.get(address))) return;
+  const start = starts.get(address)?.turn, k = JSON.parse(got.stdout);
+  if (k.labels?.[CLAIM] || !stillFresh(k, Date.now(), start)) return;
   const words = assistantWords(await readTextFile(`${home()}/.config/herdr-core/templates/assistant.md`));
   if (!words) throw new Error("The assistant template is missing or empty");
-  await deliver({ exec, writeTextFile, appHome }, address, words);
-  const labelled = await hc(["label", address, ...assistantLabels(space, tab)]);
-  if (labelled.code !== 0) throw new Error(labelled.stderr.trim() || `hc label ${address} failed`);
+  const claimed = await claimAdoption({ hc, exec }, address);
+  if (!claimed) return;
+  try {
+    if (!stillFresh(claimed, Date.now(), start)) return;
+    await deliver({ exec, writeTextFile, appHome }, address, words);
+    const labelled = await hc(["label", address, ...assistantLabels(space, tab)]);
+    if (labelled.code !== 0) throw new Error(labelled.stderr.trim() || `hc label ${address} failed`);
+  } finally {
+    await hc(["label", address, `${CLAIM}=`]);
+  }
   run("tab.rename", { id: tab, name: "Assistant" });
   run("tab.move", { id: tab, index: 1 });
 }
@@ -251,7 +259,7 @@ export default class Tabs extends View {
     noteStarts(starts, allTerminals);
     // Off with Shepherdr's own automatic Assistants (shared "coordinator.auto").
     if (shared("coordinator.auto") !== false) for (const found of firstAgents({ spaces: raw, terminals: allTerminals, panes: allPanes, starts })) {
-      const attempt = `${found.address}@${starts.get(found.address) ?? 0}`;
+      const attempt = attemptOf(found.address, starts);
       if (adopting.has(attempt) || coordinatorTab(found.space, allTerminals, allPanes)) continue;
       adopting.add(attempt);
       adoptAssistant(found).catch((e) => {
