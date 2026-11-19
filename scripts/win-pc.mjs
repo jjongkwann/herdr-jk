@@ -22,7 +22,7 @@ const MACHINE = "win-pc";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const INSTALL = join(homedir(), ".config", "herdr-app");
 // Fixes the Windows install needs that this Mac's install may not have yet.
-const PACKAGE_PATCHES = ["shepherdr/3.1.41/windows-coordinator"];
+const PACKAGE_PATCHES = ["shepherdr/3.1.44/windows-coordinator"];
 
 function hcExec(args, timeout = 590) {
   const r = spawnSync("hc", ["exec", "--on", MACHINE, "--json", "--timeout", String(timeout), "--", ...args], { encoding: "utf8", maxBuffer: 1 << 26 });

@@ -1,9 +1,9 @@
 Subject: Model picker: one Claude row per family (opus, fable, ...), so a new model version is picked up; core/agents.js and all its copies
 Owner: shepherdr
-Versions: >=3.1.41
+Versions: >=3.1.44
 
 diff --git a/core/agents.js b/core/agents.js
-index 50ebf1b..ad99313 100644
+index fa43b7f..3cac935 100644
 --- a/core/agents.js
 +++ b/core/agents.js
 @@ -4,15 +4,26 @@
@@ -40,7 +40,7 @@ index 50ebf1b..ad99313 100644
  const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
  // Permission modes as each CLI has them (Claude: --permission-mode, or
  // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
-@@ -162,7 +173,7 @@ export function contextWords(c) {
+@@ -179,7 +190,7 @@ export function contextWords(c) {
  export function menuFor(agent, dflt, current = null) {
    if (agent === "claude") {
      const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
@@ -49,7 +49,7 @@ index 50ebf1b..ad99313 100644
      // a model typed by id (an older one it still takes) stays in the list while it runs
      if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
      return { name: NAMES.claude, perms: PERMS.claude, models };
-@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+@@ -276,12 +287,11 @@ export function modelSections(menus, agent, picks, q) {
  // The picker row that is what runs now (`c` from current()), or the model as it is.
  export function rowFor(agent, c) {
    if (agent !== "claude") return c?.model ?? null;
@@ -66,7 +66,7 @@ index 50ebf1b..ad99313 100644
  }
  
 diff --git a/mods/chat-models/core/agents.js b/mods/chat-models/core/agents.js
-index 50ebf1b..ad99313 100644
+index fa43b7f..3cac935 100644
 --- a/mods/chat-models/core/agents.js
 +++ b/mods/chat-models/core/agents.js
 @@ -4,15 +4,26 @@
@@ -103,7 +103,7 @@ index 50ebf1b..ad99313 100644
  const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
  // Permission modes as each CLI has them (Claude: --permission-mode, or
  // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
-@@ -162,7 +173,7 @@ export function contextWords(c) {
+@@ -179,7 +190,7 @@ export function contextWords(c) {
  export function menuFor(agent, dflt, current = null) {
    if (agent === "claude") {
      const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
@@ -112,7 +112,7 @@ index 50ebf1b..ad99313 100644
      // a model typed by id (an older one it still takes) stays in the list while it runs
      if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
      return { name: NAMES.claude, perms: PERMS.claude, models };
-@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+@@ -276,12 +287,11 @@ export function modelSections(menus, agent, picks, q) {
  // The picker row that is what runs now (`c` from current()), or the model as it is.
  export function rowFor(agent, c) {
    if (agent !== "claude") return c?.model ?? null;
@@ -129,7 +129,7 @@ index 50ebf1b..ad99313 100644
  }
  
 diff --git a/mods/chat/core/agents.js b/mods/chat/core/agents.js
-index 50ebf1b..ad99313 100644
+index fa43b7f..3cac935 100644
 --- a/mods/chat/core/agents.js
 +++ b/mods/chat/core/agents.js
 @@ -4,15 +4,26 @@
@@ -166,7 +166,7 @@ index 50ebf1b..ad99313 100644
  const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
  // Permission modes as each CLI has them (Claude: --permission-mode, or
  // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
-@@ -162,7 +173,7 @@ export function contextWords(c) {
+@@ -179,7 +190,7 @@ export function contextWords(c) {
  export function menuFor(agent, dflt, current = null) {
    if (agent === "claude") {
      const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
@@ -175,7 +175,7 @@ index 50ebf1b..ad99313 100644
      // a model typed by id (an older one it still takes) stays in the list while it runs
      if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
      return { name: NAMES.claude, perms: PERMS.claude, models };
-@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+@@ -276,12 +287,11 @@ export function modelSections(menus, agent, picks, q) {
  // The picker row that is what runs now (`c` from current()), or the model as it is.
  export function rowFor(agent, c) {
    if (agent !== "claude") return c?.model ?? null;
@@ -192,7 +192,7 @@ index 50ebf1b..ad99313 100644
  }
  
 diff --git a/mods/coordinator/core/agents.js b/mods/coordinator/core/agents.js
-index 50ebf1b..ad99313 100644
+index fa43b7f..3cac935 100644
 --- a/mods/coordinator/core/agents.js
 +++ b/mods/coordinator/core/agents.js
 @@ -4,15 +4,26 @@
@@ -229,7 +229,7 @@ index 50ebf1b..ad99313 100644
  const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
  // Permission modes as each CLI has them (Claude: --permission-mode, or
  // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
-@@ -162,7 +173,7 @@ export function contextWords(c) {
+@@ -179,7 +190,7 @@ export function contextWords(c) {
  export function menuFor(agent, dflt, current = null) {
    if (agent === "claude") {
      const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
@@ -238,7 +238,7 @@ index 50ebf1b..ad99313 100644
      // a model typed by id (an older one it still takes) stays in the list while it runs
      if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
      return { name: NAMES.claude, perms: PERMS.claude, models };
-@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+@@ -276,12 +287,11 @@ export function modelSections(menus, agent, picks, q) {
  // The picker row that is what runs now (`c` from current()), or the model as it is.
  export function rowFor(agent, c) {
    if (agent !== "claude") return c?.model ?? null;
@@ -255,7 +255,7 @@ index 50ebf1b..ad99313 100644
  }
  
 diff --git a/mods/newspace/core/agents.js b/mods/newspace/core/agents.js
-index 50ebf1b..ad99313 100644
+index fa43b7f..3cac935 100644
 --- a/mods/newspace/core/agents.js
 +++ b/mods/newspace/core/agents.js
 @@ -4,15 +4,26 @@
@@ -292,7 +292,7 @@ index 50ebf1b..ad99313 100644
  const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
  // Permission modes as each CLI has them (Claude: --permission-mode, or
  // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
-@@ -162,7 +173,7 @@ export function contextWords(c) {
+@@ -179,7 +190,7 @@ export function contextWords(c) {
  export function menuFor(agent, dflt, current = null) {
    if (agent === "claude") {
      const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
@@ -301,7 +301,7 @@ index 50ebf1b..ad99313 100644
      // a model typed by id (an older one it still takes) stays in the list while it runs
      if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
      return { name: NAMES.claude, perms: PERMS.claude, models };
-@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+@@ -276,12 +287,11 @@ export function modelSections(menus, agent, picks, q) {
  // The picker row that is what runs now (`c` from current()), or the model as it is.
  export function rowFor(agent, c) {
    if (agent !== "claude") return c?.model ?? null;
@@ -318,7 +318,7 @@ index 50ebf1b..ad99313 100644
  }
  
 diff --git a/mods/shepherdr-settings/core/agents.js b/mods/shepherdr-settings/core/agents.js
-index 50ebf1b..ad99313 100644
+index fa43b7f..3cac935 100644
 --- a/mods/shepherdr-settings/core/agents.js
 +++ b/mods/shepherdr-settings/core/agents.js
 @@ -4,15 +4,26 @@
@@ -355,7 +355,7 @@ index 50ebf1b..ad99313 100644
  const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
  // Permission modes as each CLI has them (Claude: --permission-mode, or
  // --dangerously-skip-permissions for full access; Codex: its sandbox and approvals).
-@@ -162,7 +173,7 @@ export function contextWords(c) {
+@@ -179,7 +190,7 @@ export function contextWords(c) {
  export function menuFor(agent, dflt, current = null) {
    if (agent === "claude") {
      const models = CLAUDE_MODELS.map((m) => ({ id: m.id, name: m.name, efforts: CLAUDE_EFFORTS,
@@ -364,7 +364,7 @@ index 50ebf1b..ad99313 100644
      // a model typed by id (an older one it still takes) stays in the list while it runs
      if (current && !models.some((m) => m.id === current)) models.unshift({ id: current, name: modelName(current), efforts: CLAUDE_EFFORTS, defaultEffort: dflt?.effort ?? null, fast: false });
      return { name: NAMES.claude, perms: PERMS.claude, models };
-@@ -259,12 +270,11 @@ export function modelSections(menus, agent, picks, q) {
+@@ -276,12 +287,11 @@ export function modelSections(menus, agent, picks, q) {
  // The picker row that is what runs now (`c` from current()), or the model as it is.
  export function rowFor(agent, c) {
    if (agent !== "claude") return c?.model ?? null;

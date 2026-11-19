@@ -1,6 +1,6 @@
 Subject: herdr-artifact and herdr-secret on a Windows machine
 Owner: shepherdr
-Versions: >=3.1.41
+Versions: >=3.1.44
 
 diff --git a/bin/herdr-secret b/bin/herdr-secret
 index 83d6cdc..5a5ea89 100755
@@ -414,7 +414,7 @@ index 83d6cdc..5a5ea89 100755
      say(f"Wrote {', '.join(found)} to {os.path.basename(path)} (only you can read it; git ignores it). "
          "Never print or open it in a tool that shows its contents; remove it with a plain rm.")
 diff --git a/mods/artifacts/bin/herdr-artifact b/mods/artifacts/bin/herdr-artifact
-index 6beb07d..20361bc 100755
+index ae073f5..2f51ca1 100755
 --- a/mods/artifacts/bin/herdr-artifact
 +++ b/mods/artifacts/bin/herdr-artifact
 @@ -18,7 +18,6 @@ mod with `herdr-app check`, so a broken artifact never reaches the person.

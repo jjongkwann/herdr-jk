@@ -8,8 +8,8 @@
 // --root <dir> is the install root the patches' paths are relative to (default ~/.config/herdr-app),
 // where the owner's version is read too. A patch whose header names another (Root: ~/.config/herdr-core)
 // applies there; --root <Root>=<dir> moves that one (--root ~/.config/herdr-core=/tmp/core). A name
-// is a patch's path under patches/ without .patch (shepherdr/3.1.34/tasks-agy-brief), or a folder of
-// them (shepherdr/3.1.34). Exits 1 while any patch is missing or conflicts.
+// is a patch's path under patches/ without .patch (shepherdr/3.1.44/tasks-agy-brief), or a folder of
+// them (shepherdr/3.1.44). Exits 1 while any patch is missing or conflicts.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";

@@ -1,6 +1,6 @@
 Subject: lib/COPIES lists omarchy-tabs for its copies of coordinator.js, live.js, spacelog.js, ui.js, dirs.js, core/paths.js and core/spaces.js, so bin/sync-shared --check and shepherdr doctor pass
 Owner: shepherdr
-Versions: >=3.1.41
+Versions: >=3.1.44
 
 diff --git a/lib/COPIES b/lib/COPIES
 index 044bc1d..5636b03 100644

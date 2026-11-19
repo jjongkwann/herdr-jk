@@ -1,9 +1,9 @@
 Subject: Chat on a Windows machine: the Assistant starts there (its one-off template in pieces) and its log is found under Git bash
 Owner: shepherdr
-Versions: >=3.1.41
+Versions: >=3.1.44
 
 diff --git a/core/chat-log.js b/core/chat-log.js
-index caf9731..f227779 100644
+index 89334e2..1a4d46a 100644
 --- a/core/chat-log.js
 +++ b/core/chat-log.js
 @@ -15,6 +15,30 @@ export const FIND = `
@@ -38,7 +38,7 @@ index caf9731..f227779 100644
    if [ "$kind" = claude ]; then
      j="$HOME/.claude/sessions/$p.json"
 diff --git a/mods/chat/core/chat-log.js b/mods/chat/core/chat-log.js
-index caf9731..f227779 100644
+index 89334e2..1a4d46a 100644
 --- a/mods/chat/core/chat-log.js
 +++ b/mods/chat/core/chat-log.js
 @@ -15,6 +15,30 @@ export const FIND = `
@@ -73,7 +73,7 @@ index caf9731..f227779 100644
    if [ "$kind" = claude ]; then
      j="$HOME/.claude/sessions/$p.json"
 diff --git a/mods/chat/main.js b/mods/chat/main.js
-index be1bf5e..98dfeb8 100644
+index fba44bb..ba3ce7f 100644
 --- a/mods/chat/main.js
 +++ b/mods/chat/main.js
 @@ -1747,7 +1747,13 @@ export default class Chat extends View {
