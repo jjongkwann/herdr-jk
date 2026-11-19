@@ -27,15 +27,15 @@ export function resets(w) {
   return `resets ${DAYS[new Date(end).getDay()]} at ${clock(end)}`;
 }
 
-// The top bar's reset: local month/day from a day away ("11/21"), the time left under that ("2h10m").
+// The top bar's reset: the time left, rounded down: "2d 5h" from a day away, "5h 10m" under that, "42m" under an hour.
 // Empty when resets_at is unusable or already past.
 export function resetsCompact(w) {
   const end = Math.round(Date.parse(w.resets_at) / 60e3) * 60e3;
   const left = end - Date.now();
   if (!(left > 0)) return "";
-  if (left < DAY) return `${Math.floor(left / H)}h${Math.floor((left % H) / 60e3)}m`;
-  const date = new Date(end);
-  return `${date.getMonth() + 1}/${date.getDate()}`;
+  const days = Math.floor(left / DAY), hours = Math.floor((left % DAY) / H), minutes = Math.floor((left % H) / 60e3);
+  if (days) return `${days}d ${hours}h`;
+  return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
 export function resetsShort(w) {
