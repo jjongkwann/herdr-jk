@@ -10,6 +10,7 @@ Each folder under `mods/` is a self-contained Herdr mod. `main.js` is its entry 
 | Theme colors | `themes/*.json` |
 | Theme wallpapers | `backgrounds/omarchy/<theme>/` |
 | Next-wallpaper and full-screen keys | `mods/omarchy-bar/main.js` |
+| Top bar: menu, sidebar toggle, space numbers, search, window buttons; narrow-window sizes | `mods/omarchy-bar/main.js` |
 | Wallpaper picker | `mods/omarchy-backgrounds/main.js` |
 | Theme picker | `mods/omarchy-themes/main.js` |
 | Commit graph table, header, Manygit list | `mods/omarchy-changes/graph/graph.js` |
@@ -43,6 +44,9 @@ Each folder under `mods/` is a self-contained Herdr mod. `main.js` is its entry 
 | Windows install: stage checks, apply, rollback on the PC | `scripts/win-pc/remote.mjs` |
 | Agents shown as Chat (one copy per mod, kept identical) | `mods/omarchy-agents/parked.js`, `mods/omarchy-spaces/parked.js`, `mods/omarchy-tabs/parked.js` |
 | Ending agents whose chat pane closed | `mods/omarchy-agents/sweep.js` |
+| Closing a space's last tab or pane without closing the space | `mods/omarchy-close/safe-close.js`, `mods/omarchy-close/main.js` |
+| Asking omarchy-close to close (one copy per mod, kept identical) | `close.js` in `omarchy-agents`, `omarchy-palette`, `omarchy-pane`, `omarchy-tabs` |
+| Folded rail scrolling and its edge fades (one copy per mod, kept identical) | `mods/omarchy-agents/scroll-rail.js`, `mods/omarchy-spaces/scroll-rail.js` |
 | Spaces list and its hover close button | `mods/omarchy-spaces/main.js` |
 | Agents list and its hover close button | `mods/omarchy-agents/main.js` |
 | Sidebar footer and its height | `mods/omarchy-chrome/main.js` |
