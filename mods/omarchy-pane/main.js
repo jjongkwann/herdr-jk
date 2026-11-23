@@ -34,6 +34,7 @@ import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { panes, terminals, spaces, machines, props, run, theme, home, exec, hc, notify, nextCommand, readTextFile, appHome, layout, shared, setShared, window, openOverlay, watchFolder, settings } from "herdr";
 import { act, readLive, watchLive, touches } from "./browser/client.js";
 import { assistantStep, slotOf } from "./assistant.js";
+import { requestClose } from "./close.js";
 import { isViewer, kindOf, devtoolsArgv, devtoolsKeyPane, onScreen, errorLabel, pageShown, errorsPopup, saveFolder, reloads, Burst } from "./viewer.js";
 
 const CHAT = "chat";
@@ -567,12 +568,13 @@ export default class Pane extends View {
   }
 
   // A chat pane's ✕ does what an agent pane's does: ends the agent, and the pane goes. It asks
-  // first, in the header itself (this.ending).
+  // first, in the header itself (this.ending). The pane goes first, through omarchy-close, which
+  // keeps a space whose last pane it is, and the agent ends once that went through; ended first,
+  // the agent's chat would close itself directly.
   closeChat(chat) {
     this.ending = false;
-    const terminal = agentOf(chat);
-    if (terminal) run("terminal.kill", { terminal });
-    run("pane.close", { pane: chat });
+    const k = agentEntry(chat), terminal = k?.address, folder = k?.foreground?.cwd ?? k?.cwd;
+    requestClose("pane.close", { pane: chat, ...(folder ? { folder } : {}) }, terminal ? { command: "terminal.kill", args: { terminal } } : null);
   }
 
   // A 20 px text button for the header's "End …?" question.
@@ -644,7 +646,9 @@ export default class Pane extends View {
       .hover((s) => s.bg(t.foreground + "14").border_color(t.foreground + "40").text_color(t.foreground))
       .on_click((_e, cx) => {
         cx.stop_propagation();
-        if (fn) fn(); else run(command, args);
+        if (fn) fn();
+        else if (command === "pane.close") requestClose(command, args);
+        else run(command, args);
         cx.notify();
       })
       .child(svg(`mods/omarchy-pane/${icon}.svg`).size(14));

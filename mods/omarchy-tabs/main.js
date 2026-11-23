@@ -2,6 +2,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { syncNames } from "./names.js";
+import { requestClose } from "./close.js";
 import { renderPaneHeader } from "./pane.js";
 import { spaces, panes, terminals, props, run, openOverlay, theme, shared, setShared, layout, exec, hc, readTextFile, writeTextFile, home, appHome, nextCommand, notify, focused, settings } from "herdr";
 import { chatAgents, spacesWithChats } from "./parked.js";
@@ -267,7 +268,9 @@ export default class Tabs extends View {
         notify({ title: "This agent didn't become the Assistant", body: String(e?.message ?? e), level: "error" });
       });
     }
-    const space = withChats(allPanes, allTerminals, raw).find(p => p.active);
+    // Agents shown as Chat: counted in their tabs' status, and named in the tooltips.
+    const parked = chatAgents({ panes: allPanes, terminals: allTerminals, spaces: raw, focusedPane: focused()?.pane ?? null, seen: shared("chat.seen") ?? {} });
+    const space = spacesWithChats(raw, parked).find(p => p.active);
     const shown = space?.tabs ?? [];
     // Compact tabs (sizing.js) share the strip's measured room and shrink toward TAB_MIN before it scrolls.
     const { tab: tabW, active: tabA } = tabWidths(shown.length, this.room?.strip ?? 0, this.room?.panels ?? 0, Number(settings()?.zoom) || 1);
@@ -305,7 +308,7 @@ export default class Tabs extends View {
       // The status word lives in the tooltip; the tab keeps only its dot or spinner.
       // A cell of the measured width holds a pill, so the pills keep a gap without changing the sums in sizing.js.
       return h_flex().id(`tab-${c.id}`).w(c.active ? tabA : tabW).h_full().px(2).items_center().flex_none()
-        .tooltip([name, detail].filter(Boolean).join("\n"))
+        .tooltip([name, detail, [...tabPanes.map(p => p.terminal), ...parked.filter(a => a.tab === c.id).map(a => a.address)].filter(Boolean).join(", ")].filter(Boolean).join("\n"))
         // The close button shows on the active tab and on the one under the pointer.
         .on_hover((over, cx) => { if (over) this.overTab = c.id; else if (this.overTab === c.id) this.overTab = null; cx.notify(); })
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
@@ -324,7 +327,7 @@ export default class Tabs extends View {
           .child(div().flex_1().min_w(0).truncate().child(c.zoomed ? `${name} Z` : name))
           .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
           .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(8).flex_none().rounded(4).bg(t[c.status])))
-          .when(c.active || this.overTab === c.id, el => el.child(div().id(`close-${c.id}`).flex_none().p(2).rounded(4).text_color(t.muted).hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(14)))));
+          .when(c.active || this.overTab === c.id, el => el.child(div().id(`close-${c.id}`).flex_none().p(2).rounded(4).text_color(t.muted).hover(s => s.bg(hov).text_color(t.foreground)).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); requestClose("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(14)))));
     };
     const root = layout();
     const panel = find(root, "panel"), body = find(root, "panel-body");

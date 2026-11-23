@@ -1,7 +1,9 @@
 // Agents in grouped or priority views; parents take their most urgent sub-agent's place.
 // A viewed done agent stays in Done until left.
 
+import { ScrollRail } from "./scroll-rail.js";
 import { View, div, image, svg } from "gpui-kit";
+import { requestClose } from "./close.js";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, home } from "herdr";
 import { chatAgents, withParked } from "./parked.js";
@@ -80,6 +82,7 @@ function icon(p, size, color) {
 
 export default class Agents extends View {
   init(_props, cx) {
+    this.rail = new ScrollRail();
     if (props()?.sortMenu) return;
     this.folded = new Set();
     // Each agent's last state and when it changed (ms), kept across restarts.
@@ -196,6 +199,7 @@ export default class Agents extends View {
     const on = k.address === shown;
     return h_flex()
       .id(`sub-${k.address}`)
+      .tooltip(k.address)
       .pl(24)
       .pr(8)
       .rounded(6)
@@ -223,9 +227,12 @@ export default class Agents extends View {
 
   // Stops the agent. One that is working or needs you takes a second click within 3s.
   // `address` is always the agent's own terminal: a parked agent (parked.js) is listed by its
-  // terminal, not its chat pane, so that terminal ends, here or on another machine (`mini/t5`),
-  // and its chat pane then closes itself, as an agent's own pane does when the agent ends.
-  closer(t, address, status) {
+  // terminal, not its chat pane, so that terminal ends, here or on another machine (`mini/t5`).
+  // A chat that closes itself when its agent ends (`chat`, any but an Assistant's) closes first,
+  // through omarchy-close, which keeps a space whose last pane it is, and the agent ends once
+  // that went through: left to close itself, the chat would take the space with it.
+  // `folder`: the agent's, where the shell that keeps the space opens.
+  closer(t, address, status, chat = null, folder = null) {
     const armed = this.arming === address;
     return div()
       .id(`kill-${address}`)
@@ -247,7 +254,8 @@ export default class Agents extends View {
         } else {
           this.arming = null;
           this.hovered = null;
-          run("terminal.kill", { terminal: address });
+          if (chat) requestClose("pane.close", { pane: chat, ...(folder ? { folder } : {}) }, { command: "terminal.kill", args: { terminal: address } });
+          else requestClose("terminal.kill", { terminal: address });
         }
         cx.notify();
       })
@@ -277,6 +285,10 @@ export default class Agents extends View {
     const allSpaces = spaces();
     // Agents shown as Chat have no pane of their own, so agents() leaves them out.
     const parked = chatAgents({ panes: allPanes, terminals: all, spaces: allSpaces, focusedPane: focused()?.pane ?? null, seen: shared("chat.seen") ?? {} });
+    // Their chats close themselves when the agent ends, except an Assistant's (labelled by role, as
+    // Shepherdr's chat tells), which offers a restart; the × closes those chats itself (closer).
+    const assistant = new Set(all.filter((k) => k.labels?.["herdr.role"] === "coordinator").map((k) => k.address));
+    const closingChats = new Set(parked.filter((a) => !assistant.has(a.address)).map((a) => a.pane));
     let list = withParked(agents(), parked, allSpaces);
     this.listed = new Map(list.map((a) => [a.address, a.status]));
     this.migratePins(all);
@@ -380,7 +392,7 @@ export default class Agents extends View {
           .border(1)
           .text_size(11)
           .font_bold()
-          .tooltip([label(a), more, machine].filter(Boolean).join(" \u00b7 "))
+          .tooltip([label(a), more, a.address].filter(Boolean).join(" \u00b7 "))
           .when(a.focused, (el) => el.bg(t.foreground + "2e").border_color(t.foreground + "40"))
           .when(!a.focused, (el) => el.border_color(t.border).hover((s) => s.bg(t.foreground + "14").border_color(t.foreground + "40")))
           .on_click(() => run("pane.focus", { pane: a.pane }))
@@ -426,6 +438,7 @@ export default class Agents extends View {
       const stripe = needsYou ? t.blocked : a.focused ? t.accent : null;
       return h_flex()
         .id(`ag-${a.address}`)
+        .tooltip([name, also !== name ? also : null, a.address].filter(Boolean).join(" · "))
         .relative()
         .px(squeezed ? 6 : 8)
         .h(tall ? 44 : 26)
@@ -469,7 +482,7 @@ export default class Agents extends View {
         .when(this.hovered === a.address, el => el.child(pin))
         .when(!tall && Boolean(when) && !squeezed, el => el.child(div().flex_none().text_size(11).text_color(t.muted).child(duration(now - when))))
         .when(!(tall && needsYou), el => el.child(this.status(t, a, byPriority && !isPinned)))
-        .when(this.hovered === a.address || this.arming === a.address, el => el.child(this.closer(t, a.address, a.status)));
+        .when(this.hovered === a.address || this.arming === a.address, el => el.child(this.closer(t, a.address, a.status, closingChats.has(a.pane) ? a.pane : null, a.cwd)));
     };
 
     // Groups in list order: spaces (grouped) or priority sections. Agents of a
@@ -545,7 +558,9 @@ export default class Agents extends View {
       .when(list.length === 0 && !collapsed, (el) =>
         el.child(div().px(12).text_size(12).text_color(t.dim).child("No agent status yet. Agents show up here when they report their status. Older versions and agents inside tmux may not.")),
       )
-      .child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 10).when(collapsed, (el) => el.pt(10).gap(6).items_center()).pb(10).overflow_y_scrollbar().mode("always").children(rows))
+      .child(collapsed
+        ? this.rail.render("agents-rail", rows, t.chrome, 10)
+        : v_flex().id("ag-list").flex_1().min_h(0).px(10).pb(10).overflow_y_scrollbar().mode("always").children(rows))
       .when(collapsed, (el) =>
         el.child(
           h_flex()

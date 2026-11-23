@@ -187,8 +187,11 @@ function fontButton(view, t, which, family) {
   return div()
     .id(`st-f-${which}`)
     .w(220)
-    .px(12)
-    .py(6)
+    .h(32)
+    .flex()
+    .items_center()
+    .px(10)
+    .overflow_hidden()
     .rounded(0)
     .border_1()
     .border_color(open ? t.accent : t.border)
@@ -203,7 +206,7 @@ function fontButton(view, t, which, family) {
       else view.handle.focus();
       cx.notify();
     })
-    .child(div().font_family(family).text_size(13.5).text_color(t.foreground).child(family));
+    .child(div().flex_1().min_w(0).truncate().tooltip(family).font_family(family).text_size(13).text_color(t.foreground).child(family));
 }
 
 function fontList(view, t, which, def) {
@@ -221,13 +224,16 @@ function fontList(view, t, which, def) {
   const item = (id, label, family, onClick) =>
     div()
       .id(id)
+      .h(30)
+      .w_full()
+      .flex()
+      .items_center()
       .px(10)
-      .py(5)
       .rounded(0)
       .cursor_pointer()
       .hover((s) => s.bg(t.hover))
       .on_click(onClick)
-      .child(div().font_family(family).text_size(13.5).text_color(t.foreground).child(label));
+      .child(div().flex_1().min_w(0).truncate().tooltip(label).font_family(family).text_size(13).text_color(t.foreground).child(label));
   return v_flex()
     .w_full()
     .mb(8)

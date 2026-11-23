@@ -3,6 +3,7 @@
 // its first terminal is in now, only where unusual: branch, ahead/behind. Agent state lives in the agents list, not here. Click to
 // switch, right-click for its menu, drag to reorder.
 
+import { ScrollRail } from "./scroll-rail.js";
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, terminals, focused, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
@@ -43,6 +44,7 @@ export function tone(t, status) {
 
 export default class Spaces extends View {
   init(_props, cx) {
+    this.rail = new ScrollRail();
     this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
     this.checked = {}; // where() -> when it was last looked at
     this.unsure = new Set(); // where()s git couldn't answer for (a machine away)
@@ -505,8 +507,9 @@ export default class Spaces extends View {
         .when(!collapsed, el => el.child(`spaces ${sp.length}`))
         .child(div().id("space-new").size(22).flex_none().flex().items_center().justify_center().rounded(6).border(1).border_color(t.foreground + "00").hover(s => s.bg(t.foreground + "14").border_color(t.foreground + "40").text_color(t.foreground))
           .on_click(() => run("space.new")).child(svg("mods/omarchy-chrome/plus.svg").size(14))))
-      .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 10).pt(6).pb(10).gap(collapsed ? 6 : 2).when(collapsed, el => el.items_center()).overflow_y_scrollbar().mode("always")
-        .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); })
-        .children(this.grouped(t, collapsed, rows)));
+      .child((collapsed
+        ? this.rail.render("spaces-rail", this.grouped(t, true, rows), t.chrome)
+        : v_flex().flex_1().min_h(0).px(10).pt(6).pb(10).gap(2).overflow_y_scrollbar().mode("always").children(this.grouped(t, false, rows)))
+        .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); }));
   }
 }

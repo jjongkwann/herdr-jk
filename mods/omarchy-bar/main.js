@@ -69,7 +69,8 @@ export default class OmarchyBar extends View {
     const space = list.find((s) => s.active);
     const number = (s) => list.indexOf(s) + 1;
     // The open sidebar lists every space, so the bar names this one and the next that waits on you.
-    const rail = isRail();
+    // A narrow window has no room for the numbers either.
+    const rail = isRail() && !this.narrow;
     const waiting = list.filter((s) => blocked.has(s.id) && !s.active);
     const cwd = focused()?.cwd;
     const here = cwd ? (cwd === home() ? "~" : cwd.split("/").filter(Boolean).pop()) : null;
@@ -77,9 +78,22 @@ export default class OmarchyBar extends View {
     // macOS draws its window buttons over this corner; leave them room.
     const w = window();
     return row.pl(w?.platform === "macos" && !w.fullscreen ? 76 : 4)
+      // Below 1024px the right block keeps only the window buttons, and the usage gets its room.
+      .on_size_change((_size, cx) => {
+        const narrow = globalThis.window.viewport_size().width < 1024;
+        if (narrow === this.narrow) return;
+        this.narrow = narrow;
+        const size = narrow ? { px: w?.buttons ? 90 : 0 } : { weight: 1 };
+        const current = find(layout(), "bar-right")?.size;
+        if (current && (current.px !== size.px || current.weight !== size.weight)) run("layout.resize", { id: "bar-right", ...size });
+        cx.notify();
+      })
       .child(own(div().id("menu").flex_none().size(24).mr(6).flex().items_center().justify_center().cursor_pointer()
         .hover((s) => s.bg(t.hover)).on_click(() => run("mod.open", { name: "omarchy-palette" }))
         .text_color(t.accent).child(svg("mods/omarchy-bar/omarchy.svg").size(14))))
+      .child(own(div().id("sidebar-toggle").flex_none().w(30).h_full().mr(4).flex().items_center().justify_center().cursor_pointer().text_color(t.dim)
+        .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(toggleSidebar)
+        .child(svg("mods/omarchy-chrome/sidebar.svg").size(14))))
       .when(!rail && Boolean(space), (el) => el.child(div().flex_none().h(20).min_w(20).px(6).mr(8).flex().items_center().justify_center().rounded(4)
         .bg(t.accent).text_color(t.accent_foreground).font_bold().child(String(number(space)))))
       .children((rail ? list : []).map((s, i) => {
@@ -91,7 +105,10 @@ export default class OmarchyBar extends View {
           .on_click(() => run("space.select", { id: s.id }))
           .child(String(i + 1)));
       }))
-      .when(Boolean(space), (el) => el.when(rail, (e) => e.child(sep()))
+      .child(own(div().id("search").flex_none().w(30).h_full().flex().items_center().justify_center().cursor_pointer().text_color(t.dim)
+        .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => run("mod.open", { name: "picker" }))
+        .child(svg("mods/omarchy-chrome/search.svg").size(14))))
+      .when(Boolean(space), (el) => el.child(sep())
         .child(div().flex_none().font_medium().text_color(t.foreground).child(space.name))
         // The focused terminal may have moved away from the folder its space was named after.
         .when(Boolean(here) && here !== space.name, (e) => e.child(div().flex_none().ml(8).text_color(t.muted).child(here)))
@@ -112,12 +129,6 @@ export default class OmarchyBar extends View {
         .on_click(() => run(cmd))
         .child(svg(`mods/terminals-bar/${icon}.svg`).size(14)));
     return row.justify_end()
-      .child(own(div().id("search").flex_none().w(30).h_full().flex().items_center().justify_center().cursor_pointer().text_color(t.dim)
-        .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => run("mod.open", { name: "picker" }))
-        .child(svg("mods/omarchy-chrome/search.svg").size(14))))
-      .child(own(div().id("sidebar-toggle").flex_none().w(30).h_full().flex().items_center().justify_center().cursor_pointer().text_color(t.dim)
-        .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(toggleSidebar)
-        .child(svg("mods/omarchy-chrome/sidebar.svg").size(14))))
       .when(Boolean(w?.buttons), (el) => el
         .child(btn("wb-min", "win-min", "window.minimize"))
         .child(btn("wb-max", w.maximized ? "win-restore" : "win-max", "window.maximize"))

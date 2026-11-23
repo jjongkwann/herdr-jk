@@ -6,6 +6,7 @@
 // The app's own mod: rewritten from the binary on every start.
 
 import { View, div, svg } from "gpui-kit";
+import { requestClose } from "./close.js";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { commands, layouts, keys, run, theme, props, closeOverlay, openOverlay, shared, window as win } from "herdr";
 
@@ -157,6 +158,8 @@ export default class Palette extends View {
         title: "Duplicate mod", hint: "Mod to copy; creates <name>-copy",
         command: { name: "mod.clone", args: {} },
       } });
+    } else if (e.name === "tab.close" || e.name === "pane.close") {
+      requestClose(e.name, e.args);
     } else {
       run(e.name, e.name === "layout.clone" ? { name: shared("layout") ?? "main" } : e.args);
     }

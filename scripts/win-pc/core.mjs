@@ -4,10 +4,10 @@
 export const MODS = [
   "accept-card", "artifacts", "chat", "chat-call", "chat-image", "chat-models", "chat-react", "confirm-chat",
   "coordinator", "equal-width", "files-plus", "jump", "keybinds", "new-menu-tasks", "newspace", "omarchy-agents",
-  "omarchy-ai-usage", "omarchy-backgrounds", "omarchy-bar", "omarchy-changes", "omarchy-chrome", "omarchy-keys",
-  "omarchy-mod-manager", "omarchy-notes", "omarchy-palette", "omarchy-pane", "omarchy-settings", "omarchy-spaces",
-  "omarchy-tabs", "omarchy-themes", "pane-chat", "pr-flow", "prompt-chat", "reviewer", "shepherdr-settings",
-  "spaces-chat", "task-pr", "tasks", "tasks-menu", "toasts",
+  "omarchy-ai-usage", "omarchy-backgrounds", "omarchy-bar", "omarchy-changes", "omarchy-chrome", "omarchy-close",
+  "omarchy-keys", "omarchy-mod-manager", "omarchy-notes", "omarchy-palette", "omarchy-pane", "omarchy-settings",
+  "omarchy-spaces", "omarchy-tabs", "omarchy-themes", "pane-chat", "pr-flow", "prompt-chat", "reviewer",
+  "shepherdr-settings", "spaces-chat", "task-pr", "tasks", "tasks-menu", "toasts",
 ];
 
 // macOS only (AVFoundation, Swift, the iOS Simulator): the layout must not name them.

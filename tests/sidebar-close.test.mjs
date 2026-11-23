@@ -37,7 +37,8 @@ const texts = (tree) => walk(tree).flatMap((n) => n.kids.filter((k) => typeof k 
 
 function load(file, host) {
   const body = readFileSync(file, "utf8").replace(/^import .*;\n/gm, "").replace(/^export function/gm, "function").replace("export default class", "return class");
-  const deps = { View: class {}, div: el, image: el, svg: el, v_flex: el, h_flex: el, localStorage: { getItem: () => null, setItem() {}, removeItem() {} }, chatAgents, withParked, spacesWithChats, arrange, sweep() {}, ...host };
+  // The folded rail's scroller (scroll-rail.js, tested on its own); these tests keep the sidebar open.
+  const deps = { View: class {}, ScrollRail: class {}, div: el, image: el, svg: el, v_flex: el, h_flex: el, localStorage: { getItem: () => null, setItem() {}, removeItem() {} }, chatAgents, withParked, spacesWithChats, arrange, sweep() {}, ...host };
   return Function(...Object.keys(deps), body)(...Object.values(deps));
 }
 
@@ -45,7 +46,8 @@ function harness(file, lists, px = 243) {
   const calls = [], timers = [];
   const cx = { notify() {}, stop_propagation() {}, spawn() {}, timer: { every() {}, after: (ms, fn) => timers.push({ ms, fn }) } };
   const host = {
-    ...lists, run: (name, args) => calls.push([name, args]), theme: () => new Proxy({}, { get: () => "#888888" }),
+    // A stop goes to omarchy-close's queue (close.js, tested on its own), recorded as one call.
+    ...lists, run: (name, args) => calls.push([name, args]), requestClose: (name, args, after) => calls.push([`omarchy-close:${name}`, args, ...(after ? [after] : [])]), theme: () => new Proxy({}, { get: () => "#888888" }),
     focused: () => ({ pane: null, agent: null }), shared: () => undefined, setShared() {}, setAgentOrder() {}, openOverlay() {}, closeOverlay() {},
     props: () => ({}), window: () => ({ platform: "macos", active: false }), home: () => "/Users/me", machines: () => [{ name: "mini", layout: "ready" }],
     layout: () => ({ id: "root", children: [{ id: "sidebar", size: { px } }] }), exec: async () => ({ code: 1, stdout: "", stderr: "" }), hc: async () => ({ code: 1, stdout: "" }), watchFolder: async () => {},
@@ -86,7 +88,7 @@ test("an idle agent stops on the first click of its hover close button", () => {
   const h = harness("mods/omarchy-agents/main.js", agentLists);
   assert.equal(byId(h.render(), "kill-t1"), undefined);
   h.close("ag-t1", "kill-t1");
-  assert.deepEqual(h.calls, [["terminal.kill", { terminal: "t1" }]]);
+  assert.deepEqual(h.calls, [["omarchy-close:terminal.kill", { terminal: "t1" }]]);
 });
 
 test("a parked agent that needs you stops its own terminal on a second click within 3s", () => {
@@ -98,7 +100,8 @@ test("a parked agent that needs you stops its own terminal on a second click wit
   byId(h.render(), "ag-t2").on.on_hover(false, h.cx);
   assert.equal(byId(h.render(), "kill-t2").tip, "Click again to stop it");
   byId(h.render(), "kill-t2").on.on_click({}, h.cx);
-  assert.deepEqual(h.calls, [["terminal.kill", { terminal: "t2" }]]);
+  // Its chat pane closes first, so a space whose last pane it is stays; the agent ends once it went through.
+  assert.deepEqual(h.calls, [["omarchy-close:pane.close", { pane: "chat1" }, { command: "terminal.kill", args: { terminal: "t2" } }]]);
 });
 
 test("after 3s the arming lapses and the next click arms again", () => {
@@ -112,7 +115,18 @@ test("after 3s the arming lapses and the next click arms again", () => {
 test("a working agent parked on another machine stops by its qualified terminal", () => {
   const h = harness("mods/omarchy-agents/main.js", agentLists);
   h.close("ag-mini/t5", "kill-mini/t5", 2);
-  assert.deepEqual(h.calls, [["terminal.kill", { terminal: "mini/t5" }]]);
+  assert.deepEqual(h.calls, [["omarchy-close:pane.close", { pane: "mini/p9" }, { command: "terminal.kill", args: { terminal: "mini/t5" } }]]);
+});
+
+test("an Assistant shown as Chat stops alone: its chat stays to offer a restart", () => {
+  const lists = {
+    ...agentLists,
+    terminals: () => [...agentLists.terminals(), { address: "t6", state: "live", status: "idle", program, turn: 1, labels: { "herdr.chat": "chat6", "herdr.role": "coordinator" } }],
+    panes: () => [...agentLists.panes(), { pane: "chat6", terminal: null, mod: "chat", tab: "a" }],
+  };
+  const h = harness("mods/omarchy-agents/main.js", lists);
+  h.close("ag-t6", "kill-t6");
+  assert.deepEqual(h.calls, [["omarchy-close:terminal.kill", { terminal: "t6" }]]);
 });
 
 test("a narrow sidebar gives the name the row and hides how long ago", () => {
