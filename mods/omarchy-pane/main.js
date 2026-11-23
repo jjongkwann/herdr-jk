@@ -568,12 +568,13 @@ export default class Pane extends View {
   }
 
   // A chat pane's ✕ does what an agent pane's does: ends the agent, and the pane goes. It asks
-  // first, in the header itself (this.ending).
+  // first, in the header itself (this.ending). The pane goes first, through omarchy-close, which
+  // keeps a space whose last pane it is; ended first, the agent's chat would close itself directly.
   closeChat(chat) {
     this.ending = false;
     const terminal = agentOf(chat);
-    if (terminal) run("terminal.kill", { terminal });
     requestClose("pane.close", { pane: chat });
+    if (terminal) requestClose("terminal.kill", { terminal });
   }
 
   // A 20 px text button for the header's "End …?" question.

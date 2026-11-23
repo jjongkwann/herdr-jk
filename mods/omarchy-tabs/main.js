@@ -278,6 +278,8 @@ export default class Tabs extends View {
     };
     const stop = (_e, cx) => cx.stop_propagation();
     const f = t.foreground, hov = f + "14", sel = f + "2e";
+    // Agents shown as Chat have no pane of their own; the tooltip names their terminals too.
+    const parked = allPanes.some(p => p.mod === "chat") ? chatAgents({ panes: allPanes, terminals: allTerminals, spaces: raw }) : [];
     const item = (c, i) => {
       const tabPanes = allPanes.filter(p => p.tab === c.id);
       const lead = tabPanes.find(p => p.program?.agent && p.status === c.status) ?? tabPanes.find(p => p.program?.agent) ?? tabPanes[0];
@@ -306,7 +308,7 @@ export default class Tabs extends View {
       // The status word lives in the tooltip; the tab keeps only its dot or spinner.
       // A cell of the measured width holds a pill, so the pills keep a gap without changing the sums in sizing.js.
       return h_flex().id(`tab-${c.id}`).w(c.active ? tabA : tabW).h_full().px(2).items_center().flex_none()
-        .tooltip([name, detail, tabPanes.map(p => p.terminal).filter(Boolean).join(", ")].filter(Boolean).join("\n"))
+        .tooltip([name, detail, [...tabPanes.map(p => p.terminal), ...parked.filter(a => a.tab === c.id).map(a => a.address)].filter(Boolean).join(", ")].filter(Boolean).join("\n"))
         // The close button shows on the active tab and on the one under the pointer.
         .on_hover((over, cx) => { if (over) this.overTab = c.id; else if (this.overTab === c.id) this.overTab = null; cx.notify(); })
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); })

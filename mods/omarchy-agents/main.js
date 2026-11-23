@@ -227,9 +227,10 @@ export default class Agents extends View {
 
   // Stops the agent. One that is working or needs you takes a second click within 3s.
   // `address` is always the agent's own terminal: a parked agent (parked.js) is listed by its
-  // terminal, not its chat pane, so that terminal ends, here or on another machine (`mini/t5`),
-  // and its chat pane then closes itself, as an agent's own pane does when the agent ends.
-  closer(t, address, status) {
+  // terminal, not its chat pane, so that terminal ends, here or on another machine (`mini/t5`).
+  // Its chat pane (`chat`) closes first, through omarchy-close, which keeps a space whose last
+  // pane it is: left to close itself when its agent ends, the chat would take the space with it.
+  closer(t, address, status, chat = null) {
     const armed = this.arming === address;
     return div()
       .id(`kill-${address}`)
@@ -251,6 +252,7 @@ export default class Agents extends View {
         } else {
           this.arming = null;
           this.hovered = null;
+          if (chat) requestClose("pane.close", { pane: chat });
           requestClose("terminal.kill", { terminal: address });
         }
         cx.notify();
@@ -281,6 +283,7 @@ export default class Agents extends View {
     const allSpaces = spaces();
     // Agents shown as Chat have no pane of their own, so agents() leaves them out.
     const parked = chatAgents({ panes: allPanes, terminals: all, spaces: allSpaces, focusedPane: focused()?.pane ?? null, seen: shared("chat.seen") ?? {} });
+    const chatPanes = new Set(parked.map((a) => a.pane));
     let list = withParked(agents(), parked, allSpaces);
     this.listed = new Map(list.map((a) => [a.address, a.status]));
     this.migratePins(all);
@@ -474,7 +477,7 @@ export default class Agents extends View {
         .when(this.hovered === a.address, el => el.child(pin))
         .when(!tall && Boolean(when) && !squeezed, el => el.child(div().flex_none().text_size(11).text_color(t.muted).child(duration(now - when))))
         .when(!(tall && needsYou), el => el.child(this.status(t, a, byPriority && !isPinned)))
-        .when(this.hovered === a.address || this.arming === a.address, el => el.child(this.closer(t, a.address, a.status)));
+        .when(this.hovered === a.address || this.arming === a.address, el => el.child(this.closer(t, a.address, a.status, chatPanes.has(a.pane) ? a.pane : null)));
     };
 
     // Groups in list order: spaces (grouped) or priority sections. Agents of a

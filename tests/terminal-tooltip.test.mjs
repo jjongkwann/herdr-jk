@@ -46,10 +46,21 @@ test('tab hover shows all terminal panes but not mod panes or panes in other tab
   const context = {
     c: { id: 'tab', name: '1' }, tabA: 190, tabW: 190, TAB_ICONS: 100,
     allPanes: [address('vps/t7'), address(null), address('vps/t8'), address('vps/t9', 'other')],
-    allTerminals: [],
+    allTerminals: [], parked: [],
   };
   const { tooltip: label } = render('tabs', 'const item = (c, i) => {', '// The close button shows', context, '}; item(c, 0);');
   assert.match(label, /vps\/t7/);
   assert.match(label, /vps\/t8/);
   assert.doesNotMatch(label, /null|undefined|vps\/t9/);
+});
+
+test('tab hover also names the agents shown as Chat in that tab, which have no pane of their own', () => {
+  const context = {
+    c: { id: 'tab', name: '1' }, tabA: 190, tabW: 190, TAB_ICONS: 100,
+    allPanes: [{ pane: 'chat1', terminal: null, mod: 'chat', tab: 'tab', title: '' }],
+    allTerminals: [], parked: [{ address: 't10', tab: 'tab' }, { address: 't11', tab: 'other' }],
+  };
+  const { tooltip: label } = render('tabs', 'const item = (c, i) => {', '// The close button shows', context, '}; item(c, 0);');
+  assert.match(label, /t10/);
+  assert.doesNotMatch(label, /null|undefined|t11/);
 });
