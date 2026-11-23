@@ -231,7 +231,8 @@ export default class Agents extends View {
   // A chat that closes itself when its agent ends (`chat`, any but an Assistant's) closes first,
   // through omarchy-close, which keeps a space whose last pane it is, and the agent ends once
   // that went through: left to close itself, the chat would take the space with it.
-  closer(t, address, status, chat = null) {
+  // `folder`: the agent's, where the shell that keeps the space opens.
+  closer(t, address, status, chat = null, folder = null) {
     const armed = this.arming === address;
     return div()
       .id(`kill-${address}`)
@@ -253,7 +254,7 @@ export default class Agents extends View {
         } else {
           this.arming = null;
           this.hovered = null;
-          if (chat) requestClose("pane.close", { pane: chat }, { command: "terminal.kill", args: { terminal: address } });
+          if (chat) requestClose("pane.close", { pane: chat, ...(folder ? { folder } : {}) }, { command: "terminal.kill", args: { terminal: address } });
           else requestClose("terminal.kill", { terminal: address });
         }
         cx.notify();
@@ -284,9 +285,9 @@ export default class Agents extends View {
     const allSpaces = spaces();
     // Agents shown as Chat have no pane of their own, so agents() leaves them out.
     const parked = chatAgents({ panes: allPanes, terminals: all, spaces: allSpaces, focusedPane: focused()?.pane ?? null, seen: shared("chat.seen") ?? {} });
-    // Their chats close themselves when the agent ends, except an Assistant's, which offers a
-    // restart (Shepherdr's chat); the × closes those chats itself (closer).
-    const assistant = new Set(all.filter((k) => k.labels?.["herdr.role"] === "coordinator" || k.template === "assistant" || k.template === "coordinator").map((k) => k.address));
+    // Their chats close themselves when the agent ends, except an Assistant's (labelled by role, as
+    // Shepherdr's chat tells), which offers a restart; the × closes those chats itself (closer).
+    const assistant = new Set(all.filter((k) => k.labels?.["herdr.role"] === "coordinator").map((k) => k.address));
     const closingChats = new Set(parked.filter((a) => !assistant.has(a.address)).map((a) => a.pane));
     let list = withParked(agents(), parked, allSpaces);
     this.listed = new Map(list.map((a) => [a.address, a.status]));
@@ -481,7 +482,7 @@ export default class Agents extends View {
         .when(this.hovered === a.address, el => el.child(pin))
         .when(!tall && Boolean(when) && !squeezed, el => el.child(div().flex_none().text_size(11).text_color(t.muted).child(duration(now - when))))
         .when(!(tall && needsYou), el => el.child(this.status(t, a, byPriority && !isPinned)))
-        .when(this.hovered === a.address || this.arming === a.address, el => el.child(this.closer(t, a.address, a.status, closingChats.has(a.pane) ? a.pane : null)));
+        .when(this.hovered === a.address || this.arming === a.address, el => el.child(this.closer(t, a.address, a.status, closingChats.has(a.pane) ? a.pane : null, a.cwd)));
     };
 
     // Groups in list order: spaces (grouped) or priority sections. Agents of a

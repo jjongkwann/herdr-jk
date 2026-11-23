@@ -24,7 +24,7 @@ export async function closeSafely(command, args, api) {
   try {
     if (last) {
       const terminal = pane ?? tabPanes.find(p => p.pane === focus?.pane && p.cwd) ?? tabPanes.find(p => p.cwd);
-      const folder = terminal?.cwd || space.folder;
+      const folder = args.folder || terminal?.cwd || space.folder;
       const create = directory => api.command('tab.new', { space: space.id, ...(directory ? { folder: directory } : {}) });
       try { created = await create(folder); }
       catch (error) {

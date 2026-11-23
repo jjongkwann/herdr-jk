@@ -573,8 +573,8 @@ export default class Pane extends View {
   // the agent's chat would close itself directly.
   closeChat(chat) {
     this.ending = false;
-    const terminal = agentOf(chat);
-    requestClose("pane.close", { pane: chat }, terminal ? { command: "terminal.kill", args: { terminal } } : null);
+    const k = agentEntry(chat), terminal = k?.address, folder = k?.foreground?.cwd ?? k?.cwd;
+    requestClose("pane.close", { pane: chat, ...(folder ? { folder } : {}) }, terminal ? { command: "terminal.kill", args: { terminal } } : null);
   }
 
   // A 20 px text button for the header's "End …?" question.

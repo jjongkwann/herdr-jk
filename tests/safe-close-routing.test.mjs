@@ -26,7 +26,8 @@ test("a chat pane's End agent closes the chat first and ends its agent only once
   assert.notEqual(start, -1);
   const body = source.slice(source.indexOf('{', start) + 1, source.indexOf('\n  }\n', start));
   const calls = [], view = { ending: true };
-  new Function('agentOf', 'requestClose', 'chat', body).call(view, () => 't2', (...args) => calls.push(args), 'chat1');
-  assert.deepEqual(calls, [['pane.close', { pane: 'chat1' }, { command: 'terminal.kill', args: { terminal: 't2' } }]]);
+  new Function('agentEntry', 'requestClose', 'chat', body).call(view, () => ({ address: 't2', cwd: '/w/two' }), (...args) => calls.push(args), 'chat1');
+  // The shell that keeps the space opens in the agent's folder: a chat pane has none of its own.
+  assert.deepEqual(calls, [['pane.close', { pane: 'chat1', folder: '/w/two' }, { command: 'terminal.kill', args: { terminal: 't2' } }]]);
   assert.equal(view.ending, false);
 });

@@ -174,3 +174,10 @@ test('reports whether the close went through', async () => {
   assert.equal(await closeSafely('pane.close', { pane: 'pane' }, failing.api), false);
   assert.equal(failing.state.notices.length, 1);
 });
+test('a folder given with a pane close places the replacement shell', async () => {
+  const { state, api } = fixture();
+  state.panes[0] = { pane: 'pane', tab: 'tab', terminal: null, mod: 'chat', cwd: null };
+  assert.equal(await closeSafely('pane.close', { pane: 'pane', folder: '/repo/agent' }, api), true);
+  assert.deepEqual(state.calls[0], ['tab.new', { space: 'space', folder: '/repo/agent' }]);
+  assert.deepEqual(state.calls[1], ['pane.close', { pane: 'pane' }]);
+});
