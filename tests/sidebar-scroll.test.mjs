@@ -47,3 +47,8 @@ for (const mod of ['spaces', 'agents']) {
     assert.equal(notifications, 4);
   });
 }
+
+test('omarchy-agents and omarchy-spaces carry the same scroll-rail.js', async () => {
+  const read = mod => readFile(new URL(`../mods/omarchy-${mod}/scroll-rail.js`, import.meta.url), 'utf8');
+  assert.equal(await read('spaces'), await read('agents'));
+});

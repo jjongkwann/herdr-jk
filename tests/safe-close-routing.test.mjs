@@ -17,3 +17,6 @@ test('every Omarchy close surface uses the coordinator', () => {
   }
   assert.match(read('mods/omarchy-tabs/pane.js'), /requestClose\(command, args\)/);
 });
+test('every close surface carries the same close.js', () => {
+  for (const name of ['pane', 'agents', 'palette']) assert.equal(read(`mods/omarchy-${name}/close.js`), read('mods/omarchy-tabs/close.js'), name);
+});
