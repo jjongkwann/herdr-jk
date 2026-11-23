@@ -37,3 +37,22 @@ test('coordinator drains requests serially, including arrivals during close', as
   assert.deepEqual(events, ['start:tab.close', 'end:tab.close', 'start:pane.close', 'end:pane.close', 'start:terminal.kill', 'end:terminal.kill']);
   assert.equal(state['omarchy-close.requests'].length, 0);
 });
+test('a follow-up runs only once its close went through', async () => {
+  const state = { 'omarchy-close.requests': [
+    { command: 'pane.close', args: { pane: 'kept' }, after: { command: 'terminal.kill', args: { terminal: 'a' } } },
+    { command: 'pane.close', args: { pane: 'gone' }, after: { command: 'terminal.kill', args: { terminal: 'b' } } },
+  ] };
+  const ran = [];
+  let task, next = 0;
+  const context = {
+    View: class {}, spaces() {}, panes() {}, focused() {}, exec() {}, notify() {},
+    shared: key => state[key], setShared: (key, value) => state[key] = value,
+    nextCommand: async () => { if (next++ === 0) return 'process'; throw new Error('test complete'); },
+    closeSafely: async (command, args) => { ran.push(`${command}:${args.pane ?? args.terminal}`); return args.pane !== 'kept'; },
+  };
+  const source = strip(readFileSync(`${base}/omarchy-close/main.js`, 'utf8')).replace('export default class OmarchyClose', 'class OmarchyClose');
+  vm.runInNewContext(`${source}\nglobalThis.Controller = OmarchyClose;`, context);
+  new context.Controller().init({}, { spawn: fn => { task = fn({ sleep() {}, notify() {} }); } });
+  await assert.rejects(task, /test complete/);
+  assert.deepEqual(ran, ['pane.close:kept', 'pane.close:gone', 'terminal.kill:b']);
+});

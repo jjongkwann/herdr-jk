@@ -166,3 +166,11 @@ test('remote ids and directory remain machine-qualified', async () => {
   assert.equal(state.calls[0][1].space, 'remote/space');
   assert.equal(state.calls[1][1].id, 'remote/tab');
 });
+test('reports whether the close went through', async () => {
+  const ok = fixture();
+  assert.equal(await closeSafely('pane.close', { pane: 'pane' }, ok.api), true);
+  const failing = fixture();
+  failing.api.command = async () => { throw new Error('no tab'); };
+  assert.equal(await closeSafely('pane.close', { pane: 'pane' }, failing.api), false);
+  assert.equal(failing.state.notices.length, 1);
+});

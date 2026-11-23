@@ -1,5 +1,6 @@
+// True once the target is closed or already gone; false when it was left open (a notice says why).
 export async function closeSafely(command, args, api) {
-  if (!['tab.close', 'pane.close', 'terminal.kill'].includes(command)) return;
+  if (!['tab.close', 'pane.close', 'terminal.kill'].includes(command)) return false;
   const focus = api.focused();
   const panes = api.panes();
   const pane = command === 'pane.close'
@@ -11,12 +12,12 @@ export async function closeSafely(command, args, api) {
     : command === 'pane.close' ? { pane: pane?.pane } : { terminal: args.terminal };
   if (command === 'terminal.kill' && !pane) {
     if (args.terminal) {
-      try { await api.command(command, target); }
+      try { await api.command(command, target); return true; }
       catch (error) { api.notify({ title: 'Could not stop agent', body: String(error), level: 'error' }); }
     }
-    return;
+    return false;
   }
-  if (!space || (command === 'pane.close' && !pane)) return;
+  if (!space || (command === 'pane.close' && !pane)) return true;
   const tabPanes = panes.filter(p => p.tab === tab);
   const last = space.tabs.length === 1 && (command === 'tab.close' || tabPanes.length === 1);
   let created;
@@ -36,7 +37,7 @@ export async function closeSafely(command, args, api) {
       let ready = false;
       for (let attempt = 0; attempt < 40; attempt++) {
         const current = api.spaces().find(s => s.id === space.id);
-        if (!current || !current.tabs.some(t => t.id === tab)) return;
+        if (!current || !current.tabs.some(t => t.id === tab)) return true;
         ready = current.tabs.some(t => t.id === created.tab)
           && api.panes().some(p => p.tab === created.tab && p.terminal === created.terminal);
         if (ready) break;
@@ -45,14 +46,16 @@ export async function closeSafely(command, args, api) {
       if (!ready) throw new Error('Replacement shell did not appear. Original left open.');
     }
     const current = api.spaces().find(s => s.id === space.id);
-    if (!current?.tabs.some(t => t.id === tab)) return;
-    if (pane && !api.panes().some(p => p.pane === pane.pane && p.tab === tab)) return;
+    if (!current?.tabs.some(t => t.id === tab)) return true;
+    if (pane && !api.panes().some(p => p.pane === pane.pane && p.tab === tab)) return true;
     await api.command(command, target);
     if (created && focus?.tab !== tab && api.focused()?.tab === created.tab
         && api.spaces().some(s => s.tabs.some(t => t.id === focus?.tab))) {
       await api.command('tab.select', { id: focus.tab });
     }
+    return true;
   } catch (error) {
     api.notify({ title: 'Could not close safely', body: String(error), level: 'error' });
+    return false;
   }
 }

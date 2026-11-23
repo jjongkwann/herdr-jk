@@ -268,7 +268,9 @@ export default class Tabs extends View {
         notify({ title: "This agent didn't become the Assistant", body: String(e?.message ?? e), level: "error" });
       });
     }
-    const space = withChats(allPanes, allTerminals, raw).find(p => p.active);
+    // Agents shown as Chat: counted in their tabs' status, and named in the tooltips.
+    const parked = chatAgents({ panes: allPanes, terminals: allTerminals, spaces: raw, focusedPane: focused()?.pane ?? null, seen: shared("chat.seen") ?? {} });
+    const space = spacesWithChats(raw, parked).find(p => p.active);
     const shown = space?.tabs ?? [];
     // Compact tabs (sizing.js) share the strip's measured room and shrink toward TAB_MIN before it scrolls.
     const { tab: tabW, active: tabA } = tabWidths(shown.length, this.room?.strip ?? 0, this.room?.panels ?? 0, Number(settings()?.zoom) || 1);
@@ -278,8 +280,6 @@ export default class Tabs extends View {
     };
     const stop = (_e, cx) => cx.stop_propagation();
     const f = t.foreground, hov = f + "14", sel = f + "2e";
-    // Agents shown as Chat have no pane of their own; the tooltip names their terminals too.
-    const parked = allPanes.some(p => p.mod === "chat") ? chatAgents({ panes: allPanes, terminals: allTerminals, spaces: raw }) : [];
     const item = (c, i) => {
       const tabPanes = allPanes.filter(p => p.tab === c.id);
       const lead = tabPanes.find(p => p.program?.agent && p.status === c.status) ?? tabPanes.find(p => p.program?.agent) ?? tabPanes[0];

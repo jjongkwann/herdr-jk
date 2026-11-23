@@ -24,7 +24,9 @@ export default class OmarchyClose extends View {
           while (shared("omarchy-close.requests")?.length) {
             const [request, ...rest] = shared("omarchy-close.requests");
             setShared("omarchy-close.requests", rest);
-            await closeSafely(request.command, request.args, api);
+            const closed = await closeSafely(request.command, request.args, api);
+            // A follow-up (ending a chat's agent) runs only once its close went through.
+            if (closed && request.after) await closeSafely(request.after.command, request.after.args, api);
           }
         }
         cx.notify();
