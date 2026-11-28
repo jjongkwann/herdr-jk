@@ -35,13 +35,14 @@ const walk = (e, out = []) => {
 };
 const ids = (tree) => walk(tree).map((n) => n.id).filter((id) => /^(ag-t|sub-|sec-)/.test(id));
 const byId = (tree, id) => walk(tree).find((n) => n.id === id);
+const texts = (tree) => walk(tree).flatMap((n) => n.kids.filter((k) => typeof k === "string"));
 
-function harness(lists, px = 243) {
+function harness(lists, px = 243, settings = {}) {
   const calls = [], order = [];
   const cx = { notify() {}, stop_propagation() {}, timer: { every() {}, after() {} } };
   const host = {
     ...lists, run: (name, args) => calls.push([name, args]), requestClose: (name, args, after) => calls.push([`omarchy-close:${name}`, args, after]),
-    theme: () => new Proxy({}, { get: () => "#888888" }), focused: () => ({ pane: null, agent: null }), shared: () => undefined, setShared() {},
+    theme: () => new Proxy({}, { get: () => "#888888" }), focused: () => ({ pane: null, agent: null }), shared: (key) => settings[key], setShared() {},
     setAgentOrder: (o) => order.push(o), openOverlay() {}, closeOverlay() {}, props: () => ({}), window: () => ({ platform: "macos" }), home: () => "/Users/me",
     layout: () => ({ id: "root", children: [{ id: "sidebar", size: { px } }] }),
   };
@@ -112,4 +113,17 @@ test("a sub-agent parked behind a chat shows under its parent and its × closes 
     ["pane.focus", { pane: "chat5" }],
     ["omarchy-close:pane.close", { pane: "chat5", folder: "/w/one" }, { command: "terminal.kill", args: { terminal: "t5" } }],
   ]);
+});
+
+test("a kept sub-agent's row pins it, and a folded space still says it needs you", () => {
+  const h = harness(kept);
+  byId(h.render(), "sub-t2").on.on_hover(true, h.cx);
+  assert.equal(byId(h.render(), "pin-t2"), undefined);
+  byId(h.render(), "sub-t3").on.on_hover(true, h.cx);
+  byId(h.render(), "pin-t3").on.on_click({}, h.cx);
+  assert.deepEqual(h.calls, [["terminal.pin", { terminal: "t3", pinned: true }]]);
+  const needs = { ...kept, agents: () => [entry("t1", "p1", "idle"), entry("t3", "p3", "blocked")] };
+  const g = harness(needs, 243, { "agents.sort": "grouped" });
+  byId(g.render(), "sp-s1").on.on_click({}, g.cx);
+  assert.ok(texts(g.render()).includes("!"));
 });

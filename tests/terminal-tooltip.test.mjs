@@ -27,7 +27,7 @@ test('agent rows render local IDs and remote addresses, keeping the expanded rem
       const result = render('agents', 'const row = (a, i, subs = []) => {', '\n    };', {
         agent: { address, space_name: 'Build' }, collapsed, t: {}, detail: new Map(),
         icon: () => null, label: () => 'Build', place: () => 'Build', room: () => 100,
-        since: () => null, status: () => null, squeezed: false, byPriority: false,
+        since: () => null, status: () => null, pinner: () => null, squeezed: false, byPriority: false,
         rankOf: () => 0, RANK: { idle: 0 },
       }, '}; row(agent, 0);');
       assert.equal(result.tooltip, `Build · ${address}`);

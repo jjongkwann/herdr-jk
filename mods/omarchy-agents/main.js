@@ -202,7 +202,7 @@ export default class Agents extends View {
   subRow(t, s, shown, compact) {
     const k = s.t;
     // Listed (kept as a pane, or parked behind a chat), this is its only row: a click goes to its
-    // pane and the × closes it as its own row would.
+    // pane, and the pin and × work as on its own row.
     const own = this.listed.get(k.address);
     const st = kidStatus(k, this.listed);
     const pic = icon(k.program, 14, t.foreground);
@@ -231,8 +231,29 @@ export default class Agents extends View {
         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(0))))
       .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
       .child(div().flex_1().truncate().text_color(on ? t.foreground : t.muted).child(k.name || k.template || k.program?.name || k.address))
+      .when(Boolean(own) && this.hovered === k.address, (el) => el.child(this.pinner(t, k.address, own.pinned).mr(4)))
       .child(this.status(t, { status: st }, compact))
       .when(this.hovered === k.address || this.arming === k.address, (el) => el.child(this.closer(t, k.address, st, own && this.closingChats.has(own.pane) ? own.pane : null, own?.cwd)));
+  }
+
+  pinner(t, address, pinned) {
+    return div()
+      .id(`pin-${address}`)
+      .flex_none()
+      .p(2)
+      .rounded(6)
+      .text_color(t.dim)
+      .cursor_pointer()
+      .hover((s) => s.bg(t.foreground + "14").text_color(t.foreground))
+      .tooltip(pinned ? "Unpin" : "Pin to the top")
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        run("terminal.pin", { terminal: address, pinned: !pinned });
+        // The row moves away from under the pointer, and no hover-out comes.
+        this.hovered = null;
+        cx.notify();
+      })
+      .child(svg(`mods/omarchy-chrome/${pinned ? "pin-off" : "pin"}.svg`).size(13));
   }
 
   // Stops the agent. One that is working or needs you takes a second click within 3s.
@@ -419,23 +440,7 @@ export default class Agents extends View {
       const when = this.since(a);
       const idle = a.status === "idle" && !a.focused;
       const isPinned = a.pinned;
-      const pin = div()
-        .id(`pin-${a.address}`)
-        .flex_none()
-        .p(2)
-        .rounded(6)
-        .text_color(t.dim)
-        .cursor_pointer()
-        .hover((s) => s.bg(t.foreground + "14").text_color(t.foreground))
-        .tooltip(isPinned ? "Unpin" : "Pin to the top")
-        .on_click((_e, cx) => {
-          cx.stop_propagation();
-          run("terminal.pin", { terminal: a.address, pinned: !isPinned });
-          // The row moves away from under the pointer, and no hover-out comes.
-          this.hovered = null;
-          cx.notify();
-        })
-        .child(svg(`mods/omarchy-chrome/${isPinned ? "pin-off" : "pin"}.svg`).size(13));
+      const pin = this.pinner(t, a.address, isPinned);
       // Under a space header the space goes without saying; an automatic tab number says nothing.
       // Without a space header above (priority, pinned) the row names its space.
       const full = byPriority || isPinned;
@@ -512,10 +517,12 @@ export default class Agents extends View {
       else groups.push({ id, label: byPriority ? SECTION[r] : a.space_name || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });
     }
 
-    // A group's header; it folds the group. Folded, it says how many and the most urgent state.
+    // A group's header; it folds the group. Folded, it says how many and the most urgent state,
+    // of its rows and the listed sub-agents under them (agents with a pane, as Herdr's space status counts).
     const header = (g) => {
       const open = !this.folded.has(g.id);
-      const top = g.members.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
+      const shownIn = g.members.flatMap((a) => [a, ...subsOf.get(a.address).filter((s) => nested.has(s.t.address)).map((s) => this.listed.get(s.t.address))]);
+      const top = shownIn.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
       return h_flex()
         .id(g.id)
         .px(8)
