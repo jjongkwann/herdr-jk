@@ -54,9 +54,16 @@ function title(tab, l) {
 const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
 // A sub-agent without a pane isn't in agents(): its raw word, error counting as
 // blocked. It's never done: it reports to its parent, and the parent's done is the news.
+// One kept as a pane, or parked behind a chat, is listed too: it keeps its own status, done included.
 const kidStatus = (k, listed) => {
-  const s = listed.get(k.address) ?? k.status;
+  if (listed.has(k.address)) return listed.get(k.address).status;
+  const s = k.status;
   return s === "error" ? "blocked" : s === "done" ? "idle" : s;
+};
+// A helper's done is its own row's news: it doesn't pull its parent into Done.
+const kidRank = (k, listed) => {
+  const s = kidStatus(k, listed);
+  return RANK[s === "done" ? "idle" : s] ?? 0;
 };
 const SORTS = [
   { id: "priority", label: "Priority", icon: "clock" },
@@ -194,6 +201,9 @@ export default class Agents extends View {
 
   subRow(t, s, shown, compact) {
     const k = s.t;
+    // Listed (kept as a pane, or parked behind a chat), this is its only row: a click goes to its
+    // pane, and the pin and × work as on its own row.
+    const own = this.listed.get(k.address);
     const st = kidStatus(k, this.listed);
     const pic = icon(k.program, 14, t.foreground);
     const on = k.address === shown;
@@ -215,14 +225,35 @@ export default class Agents extends View {
         else if (this.hovered === k.address) this.hovered = null;
         cx.notify();
       })
-      .on_click(() => this.peek(k.address))
+      .on_click(() => (own ? run("pane.focus", { pane: own.pane }) : this.peek(k.address)))
       .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
         .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(0))))
       .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
       .child(div().flex_1().truncate().text_color(on ? t.foreground : t.muted).child(k.name || k.template || k.program?.name || k.address))
+      .when(Boolean(own) && this.hovered === k.address, (el) => el.child(this.pinner(t, k.address, own.pinned).mr(4)))
       .child(this.status(t, { status: st }, compact))
-      .when(this.hovered === k.address || this.arming === k.address, (el) => el.child(this.closer(t, k.address, st)));
+      .when(this.hovered === k.address || this.arming === k.address, (el) => el.child(this.closer(t, k.address, st, own && this.closingChats.has(own.pane) ? own.pane : null, own?.cwd)));
+  }
+
+  pinner(t, address, pinned) {
+    return div()
+      .id(`pin-${address}`)
+      .flex_none()
+      .p(2)
+      .rounded(6)
+      .text_color(t.dim)
+      .cursor_pointer()
+      .hover((s) => s.bg(t.foreground + "14").text_color(t.foreground))
+      .tooltip(pinned ? "Unpin" : "Pin to the top")
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        run("terminal.pin", { terminal: address, pinned: !pinned });
+        // The row moves away from under the pointer, and no hover-out comes.
+        this.hovered = null;
+        cx.notify();
+      })
+      .child(svg(`mods/omarchy-chrome/${pinned ? "pin-off" : "pin"}.svg`).size(13));
   }
 
   // Stops the agent. One that is working or needs you takes a second click within 3s.
@@ -290,23 +321,32 @@ export default class Agents extends View {
     const assistant = new Set(all.filter((k) => k.labels?.["herdr.role"] === "coordinator").map((k) => k.address));
     const closingChats = new Set(parked.filter((a) => !assistant.has(a.address)).map((a) => a.pane));
     let list = withParked(agents(), parked, allSpaces);
-    this.listed = new Map(list.map((a) => [a.address, a.status]));
+    this.listed = new Map(list.map((a) => [a.address, a]));
+    this.closingChats = closingChats;
     this.migratePins(all);
     const shown = focused()?.agent;
     const now = Date.now();
     this.track(list, now);
     this.hold(list);
+    // A listed sub-agent (kept as a pane, or parked behind a chat) that a tree shows gets no row of
+    // its own, unless it's pinned. The rail draws no trees, so there it keeps one.
+    const subsOf = new Map(list.map((a) => [a.address, this.tree(all, a.address)]));
+    const nested = new Set(collapsed ? [] : [...subsOf.values()].flat().map((s) => s.t.address).filter((x) => this.listed.has(x)));
+    list = list.filter((a) => a.pinned || !nested.has(a.address));
+    // The tree drawn under a row. A pinned sub-agent's row draws none: its sub-agents are in its parent's tree.
+    const shownSubs = (a) => (collapsed || nested.has(a.address) ? [] : subsOf.get(a.address));
     const byPriority = sort.id === "priority";
-    const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
+    const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...subsOf.get(a.address).map((s) => kidRank(s.t, this.listed)))]));
     const rankOf = (a) => urgency.get(a.address);
     if (byPriority) list = [...list].sort((x, y) => rankOf(y) - rankOf(x) || this.since(y) - this.since(x) || y.seq - x.seq);
     const pinned = list.filter((a) => a.pinned);
     const rest = list.filter((a) => !a.pinned);
     list = [...pinned, ...rest];
-    setAgentOrder(list.map((a) => a.address));
+    // Agent keys go down the list as it reads: each row, then the listed sub-agents shown under it.
+    setAgentOrder([...new Set(list.flatMap((a) => [a.address, ...shownSubs(a).map((s) => s.t.address).filter((x) => nested.has(x))]))]);
 
     const withKids = (a, i) => {
-      const subs = collapsed ? [] : this.tree(all, a.address);
+      const subs = shownSubs(a);
       const r = row(a, i, subs);
       if (this.folded.has(a.address)) return [r];
       return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority))];
@@ -402,23 +442,7 @@ export default class Agents extends View {
       const when = this.since(a);
       const idle = a.status === "idle" && !a.focused;
       const isPinned = a.pinned;
-      const pin = div()
-        .id(`pin-${a.address}`)
-        .flex_none()
-        .p(2)
-        .rounded(6)
-        .text_color(t.dim)
-        .cursor_pointer()
-        .hover((s) => s.bg(t.foreground + "14").text_color(t.foreground))
-        .tooltip(isPinned ? "Unpin" : "Pin to the top")
-        .on_click((_e, cx) => {
-          cx.stop_propagation();
-          run("terminal.pin", { terminal: a.address, pinned: !isPinned });
-          // The row moves away from under the pointer, and no hover-out comes.
-          this.hovered = null;
-          cx.notify();
-        })
-        .child(svg(`mods/omarchy-chrome/${isPinned ? "pin-off" : "pin"}.svg`).size(13));
+      const pin = this.pinner(t, a.address, isPinned);
       // Under a space header the space goes without saying; an automatic tab number says nothing.
       // Without a space header above (priority, pinned) the row names its space.
       const full = byPriority || isPinned;
@@ -495,10 +519,12 @@ export default class Agents extends View {
       else groups.push({ id, label: byPriority ? SECTION[r] : a.space_name || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });
     }
 
-    // A group's header; it folds the group. Folded, it says how many and the most urgent state.
+    // A group's header; it folds the group. Folded, it says how many and the most urgent state,
+    // of its rows and the listed sub-agents under them (agents with a pane, as Herdr's space status counts).
     const header = (g) => {
       const open = !this.folded.has(g.id);
-      const top = g.members.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
+      const shownIn = [...new Set(g.members.flatMap((a) => [a, ...shownSubs(a).filter((s) => nested.has(s.t.address)).map((s) => this.listed.get(s.t.address))]))];
+      const top = shownIn.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
       return h_flex()
         .id(g.id)
         .px(8)
@@ -515,7 +541,7 @@ export default class Agents extends View {
           cx.notify();
         })
         .child(div().truncate().font_medium().text_color(t[g.status] ?? t.muted).child((g.label ?? "").toLowerCase()))
-        .when(byPriority || !open, (el) => el.child(div().text_color(t.muted).child(String(g.members.length))))
+        .when(byPriority || !open, (el) => el.child(div().text_color(t.muted).child(String(shownIn.length))))
         .child(div().flex_1())
         .when(!open, (el) => el
           .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
@@ -540,7 +566,7 @@ export default class Agents extends View {
             .flex_none()
             .items_center()
             .justify_between()
-            .child(div().text_size(11).text_color(t.dim).child(`agents ${list.length}`))
+            .child(div().text_size(11).text_color(t.dim).child(`agents ${this.listed.size}`))
             .child(
               div()
                 .id("ag-sort")
