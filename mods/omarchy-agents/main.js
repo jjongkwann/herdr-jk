@@ -54,9 +54,16 @@ function title(tab, l) {
 const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
 // A sub-agent without a pane isn't in agents(): its raw word, error counting as
 // blocked. It's never done: it reports to its parent, and the parent's done is the news.
+// One kept as a pane, or parked behind a chat, is listed too: it keeps its own status, done included.
 const kidStatus = (k, listed) => {
-  const s = listed.get(k.address) ?? k.status;
+  if (listed.has(k.address)) return listed.get(k.address).status;
+  const s = k.status;
   return s === "error" ? "blocked" : s === "done" ? "idle" : s;
+};
+// A helper's done is its own row's news: it doesn't pull its parent into Done.
+const kidRank = (k, listed) => {
+  const s = kidStatus(k, listed);
+  return RANK[s === "done" ? "idle" : s] ?? 0;
 };
 const SORTS = [
   { id: "priority", label: "Priority", icon: "clock" },
@@ -194,6 +201,9 @@ export default class Agents extends View {
 
   subRow(t, s, shown, compact) {
     const k = s.t;
+    // Listed (kept as a pane, or parked behind a chat), this is its only row: a click goes to its
+    // pane and the × closes it as its own row would.
+    const own = this.listed.get(k.address);
     const st = kidStatus(k, this.listed);
     const pic = icon(k.program, 14, t.foreground);
     const on = k.address === shown;
@@ -215,14 +225,14 @@ export default class Agents extends View {
         else if (this.hovered === k.address) this.hovered = null;
         cx.notify();
       })
-      .on_click(() => this.peek(k.address))
+      .on_click(() => (own ? run("pane.focus", { pane: own.pane }) : this.peek(k.address)))
       .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
         .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(0))))
       .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
       .child(div().flex_1().truncate().text_color(on ? t.foreground : t.muted).child(k.name || k.template || k.program?.name || k.address))
       .child(this.status(t, { status: st }, compact))
-      .when(this.hovered === k.address || this.arming === k.address, (el) => el.child(this.closer(t, k.address, st)));
+      .when(this.hovered === k.address || this.arming === k.address, (el) => el.child(this.closer(t, k.address, st, own && this.closingChats.has(own.pane) ? own.pane : null, own?.cwd)));
   }
 
   // Stops the agent. One that is working or needs you takes a second click within 3s.
@@ -290,23 +300,30 @@ export default class Agents extends View {
     const assistant = new Set(all.filter((k) => k.labels?.["herdr.role"] === "coordinator").map((k) => k.address));
     const closingChats = new Set(parked.filter((a) => !assistant.has(a.address)).map((a) => a.pane));
     let list = withParked(agents(), parked, allSpaces);
-    this.listed = new Map(list.map((a) => [a.address, a.status]));
+    this.listed = new Map(list.map((a) => [a.address, a]));
+    this.closingChats = closingChats;
     this.migratePins(all);
     const shown = focused()?.agent;
     const now = Date.now();
     this.track(list, now);
     this.hold(list);
+    // A listed sub-agent (kept as a pane, or parked behind a chat) that a tree shows gets no row of
+    // its own, unless it's pinned. The rail draws no trees, so there it keeps one.
+    const subsOf = new Map(list.map((a) => [a.address, this.tree(all, a.address)]));
+    const nested = new Set(collapsed ? [] : [...subsOf.values()].flat().map((s) => s.t.address).filter((x) => this.listed.has(x)));
+    list = list.filter((a) => a.pinned || !nested.has(a.address));
     const byPriority = sort.id === "priority";
-    const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
+    const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...subsOf.get(a.address).map((s) => kidRank(s.t, this.listed)))]));
     const rankOf = (a) => urgency.get(a.address);
     if (byPriority) list = [...list].sort((x, y) => rankOf(y) - rankOf(x) || this.since(y) - this.since(x) || y.seq - x.seq);
     const pinned = list.filter((a) => a.pinned);
     const rest = list.filter((a) => !a.pinned);
     list = [...pinned, ...rest];
-    setAgentOrder(list.map((a) => a.address));
+    // Agent keys go down the list as it reads: each row, then the listed sub-agents shown under it.
+    setAgentOrder([...new Set(list.flatMap((a) => [a.address, ...subsOf.get(a.address).map((s) => s.t.address).filter((x) => nested.has(x))]))]);
 
     const withKids = (a, i) => {
-      const subs = collapsed ? [] : this.tree(all, a.address);
+      const subs = collapsed ? [] : subsOf.get(a.address);
       const r = row(a, i, subs);
       if (this.folded.has(a.address)) return [r];
       return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority))];
