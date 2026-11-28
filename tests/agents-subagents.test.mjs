@@ -90,6 +90,16 @@ test("a kept sub-agent keeps its own row when its parent is gone, when pinned, a
   const h = harness(pinned);
   assert.deepEqual(ids(h.render()), ["ag-t3", "sec-2", "ag-t1", "sub-t2", "sub-t3"]);
   assert.deepEqual(h.order.at(-1), ["t3", "t1"]);
+  // Pinned with a kept helper of its own, t4: that one is drawn once, in t1's tree.
+  const deeper = {
+    ...pinned, agents: () => [...pinned.agents(), entry("t4", "p4", "idle")],
+    terminals: () => [...kept.terminals(), { address: "t4", parent: "t3", state: "live", status: "idle", program, labels: {} }],
+  };
+  const d = harness(deeper);
+  const tree = d.render();
+  assert.deepEqual(ids(tree), ["ag-t3", "sec-2", "ag-t1", "sub-t2", "sub-t3", "sub-t4"]);
+  assert.deepEqual(d.order.at(-1), ["t3", "t1", "t4"]);
+  assert.ok(texts(tree).includes("agents 3"));
   // The rail draws no trees, so each listed agent keeps its own square there.
   assert.deepEqual(ids(harness(kept, 100).render()), ["ag-t3", "ag-t1"]);
 });
@@ -125,5 +135,6 @@ test("a kept sub-agent's row pins it, and a folded space still says it needs you
   const needs = { ...kept, agents: () => [entry("t1", "p1", "idle"), entry("t3", "p3", "blocked")] };
   const g = harness(needs, 243, { "agents.sort": "grouped" });
   byId(g.render(), "sp-s1").on.on_click({}, g.cx);
-  assert.ok(texts(g.render()).includes("!"));
+  // It counts both agents, as before the helper moved under its parent.
+  assert.ok(texts(g.render()).includes("!") && texts(g.render()).includes("2"));
 });

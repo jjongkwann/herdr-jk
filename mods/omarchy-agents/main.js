@@ -333,6 +333,8 @@ export default class Agents extends View {
     const subsOf = new Map(list.map((a) => [a.address, this.tree(all, a.address)]));
     const nested = new Set(collapsed ? [] : [...subsOf.values()].flat().map((s) => s.t.address).filter((x) => this.listed.has(x)));
     list = list.filter((a) => a.pinned || !nested.has(a.address));
+    // The tree drawn under a row. A pinned sub-agent's row draws none: its sub-agents are in its parent's tree.
+    const shownSubs = (a) => (collapsed || nested.has(a.address) ? [] : subsOf.get(a.address));
     const byPriority = sort.id === "priority";
     const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...subsOf.get(a.address).map((s) => kidRank(s.t, this.listed)))]));
     const rankOf = (a) => urgency.get(a.address);
@@ -341,10 +343,10 @@ export default class Agents extends View {
     const rest = list.filter((a) => !a.pinned);
     list = [...pinned, ...rest];
     // Agent keys go down the list as it reads: each row, then the listed sub-agents shown under it.
-    setAgentOrder([...new Set(list.flatMap((a) => [a.address, ...subsOf.get(a.address).map((s) => s.t.address).filter((x) => nested.has(x))]))]);
+    setAgentOrder([...new Set(list.flatMap((a) => [a.address, ...shownSubs(a).map((s) => s.t.address).filter((x) => nested.has(x))]))]);
 
     const withKids = (a, i) => {
-      const subs = collapsed ? [] : subsOf.get(a.address);
+      const subs = shownSubs(a);
       const r = row(a, i, subs);
       if (this.folded.has(a.address)) return [r];
       return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority))];
@@ -521,7 +523,7 @@ export default class Agents extends View {
     // of its rows and the listed sub-agents under them (agents with a pane, as Herdr's space status counts).
     const header = (g) => {
       const open = !this.folded.has(g.id);
-      const shownIn = g.members.flatMap((a) => [a, ...subsOf.get(a.address).filter((s) => nested.has(s.t.address)).map((s) => this.listed.get(s.t.address))]);
+      const shownIn = [...new Set(g.members.flatMap((a) => [a, ...shownSubs(a).filter((s) => nested.has(s.t.address)).map((s) => this.listed.get(s.t.address))]))];
       const top = shownIn.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
       return h_flex()
         .id(g.id)
@@ -539,7 +541,7 @@ export default class Agents extends View {
           cx.notify();
         })
         .child(div().truncate().font_medium().text_color(t[g.status] ?? t.muted).child((g.label ?? "").toLowerCase()))
-        .when(byPriority || !open, (el) => el.child(div().text_color(t.muted).child(String(g.members.length))))
+        .when(byPriority || !open, (el) => el.child(div().text_color(t.muted).child(String(shownIn.length))))
         .child(div().flex_1())
         .when(!open, (el) => el
           .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
@@ -564,7 +566,7 @@ export default class Agents extends View {
             .flex_none()
             .items_center()
             .justify_between()
-            .child(div().text_size(11).text_color(t.dim).child(`agents ${list.length}`))
+            .child(div().text_size(11).text_color(t.dim).child(`agents ${this.listed.size}`))
             .child(
               div()
                 .id("ag-sort")
